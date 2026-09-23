@@ -1,0 +1,51 @@
+{
+  "sample_id": "real-001",
+  "title": "基于耳脑电的脑机接口深度学习：系统性比较与设计启示",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13510306",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "仅 14 名受试者，未见样本量依据/功效分析"
+    },
+    {
+      "checklist_item_id": "R-08",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 9
+      },
+      "note": "多模型比较未做多重比较校正"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 5
+      },
+      "note": "报告分类性能但未见置信区间/效应量"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 9
+      },
+      "note": "未报告随机种子/代码可得性（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 9
+      },
+      "note": "未见局限性讨论"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注（R-03 经复核为已描述分层交叉验证，撤销）；R-09 锚点按“该信息应出现的段落”调整（统计检验段）"
+}

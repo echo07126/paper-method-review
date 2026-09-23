@@ -1,0 +1,82 @@
+{
+  "sample_id": "synthetic-001",
+  "title": "眼底分类模型的调参与显著性报告（预埋：泄漏/检验/区间/种子）",
+  "type": "fixture",
+  "source": null,
+  "license": "self-authored",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "样本量无依据"
+    },
+    {
+      "checklist_item_id": "R-03",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "验证集上调参"
+    },
+    {
+      "checklist_item_id": "R-07",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "只有 p 值无检验方法"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "无置信区间"
+    },
+    {
+      "checklist_item_id": "R-10",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "有指标但未报告重复/方差（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-12",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "仅说明网格搜索，未给出搜索范围（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-13",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未说明预处理/不平衡处理（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "无随机种子"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 4
+      },
+      "note": "全文无局限性讨论（复核补标）"
+    }
+  ]
+}

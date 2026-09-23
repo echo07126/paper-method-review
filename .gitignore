@@ -1,0 +1,33 @@
+# 密钥与本地配置
+.env
+**/.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# 用户提供的原始论文（非开放许可，仅本地留档；评测用 samples/real/ 的改写脱敏版）
+samples/real/raw/
+
+# 运行时数据（论文/报告/临时文件不得入库）
+data/
+logs/
+*.db
+*.sqlite3
+
+# 前端
+node_modules/
+dist/
+*.timestamp-*.mjs
+.vite/
+
+# 编辑器与系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

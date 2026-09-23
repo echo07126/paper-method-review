@@ -1,0 +1,27 @@
+{
+  "sample_id": "real-007",
+  "title": "大学生AI素养与认知灵活性的剖面分析及其与深度学习能力的相关性",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13467831",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "591 份有效问卷但未见样本量依据"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 7
+      },
+      "note": "报告显著性但未见置信区间"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注"
+}

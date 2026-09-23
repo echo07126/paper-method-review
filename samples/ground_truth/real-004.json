@@ -1,0 +1,35 @@
+{
+  "sample_id": "real-004",
+  "title": "超分辨率MRI与2.5D深度学习预测直肠癌神经周围侵犯的瘤内-瘤周影像组学研究",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13499786",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "312 例但未见样本量依据"
+    },
+    {
+      "checklist_item_id": "R-04",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 7
+      },
+      "note": "未见基线模型对比"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "未报告随机种子/代码可得性"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注；R-14 锚点按“该信息应出现的段落”调整（方法概述段）"
+}

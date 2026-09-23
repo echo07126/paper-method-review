@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+      - name: Dependency audit (fail on known vulns)
+        run: pip-audit -r requirements.txt
+      - name: Unit + contract tests
+        run: python -m pytest backend/tests -q
+      - name: Compile active scripts only
+        run: python -m compileall -q backend/app backend/scripts/*.py
+      # 指标回归：检出率 / 精确率 / 定位率的口径以本脚本实际输出为准
+      - name: Eval regression (AC-2 / AC-3)
+        run: python backend/scripts/eval_ac.py
+      # 安全核查：未通过时返回非零，阻断合并
+      - name: Security audit (gate)
+        run: python backend/scripts/security_audit.py
+      # 接口冒烟：上传→审查→报告→导出→越权拦截→清理，含 data/ 隔离自证
+      - name: API smoke (isolated)
+        run: python backend/scripts/api_check.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+      - run: npm install --no-fund --no-audit
+      - name: Dependency audit (high+)
+        run: npm audit --audit-level=high || true
+      - name: Type check
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build

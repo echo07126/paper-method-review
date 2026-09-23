@@ -1,0 +1,90 @@
+{
+  "sample_id": "synthetic-002",
+  "title": "注意力模块与结论外推（预埋：消融/外推/区间/样本量）",
+  "type": "fixture",
+  "source": null,
+  "license": "self-authored",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "样本量无依据"
+    },
+    {
+      "checklist_item_id": "R-03",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "仅说明训练与评估，未描述数据划分（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-04",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未见可核对的基线方法（复核补标）（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-05",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "提出模块无消融"
+    },
+    {
+      "checklist_item_id": "R-06",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "提出模块但未报告评价指标（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "有检验无区间"
+    },
+    {
+      "checklist_item_id": "R-11",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 4
+      },
+      "note": "结论外推"
+    },
+    {
+      "checklist_item_id": "R-13",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未说明预处理/不平衡处理（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "未报告随机种子（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 4
+      },
+      "note": "全文无局限性讨论（复核补标）"
+    }
+  ]
+}

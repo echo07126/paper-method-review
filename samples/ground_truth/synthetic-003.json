@@ -1,0 +1,106 @@
+{
+  "sample_id": "synthetic-003",
+  "title": "引用规范与模块消融（预埋：悬空引用/缺文献表/消融）",
+  "type": "fixture",
+  "source": null,
+  "license": "self-authored",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "样本量无依据"
+    },
+    {
+      "checklist_item_id": "R-03",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未描述数据划分（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-04",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未见可核对的基线方法（复核补标）（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-05",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "提出模块无消融"
+    },
+    {
+      "checklist_item_id": "R-08",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "多数据集比较未见多重比较校正（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "有检验无区间"
+    },
+    {
+      "checklist_item_id": "R-10",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "有指标但未报告重复/方差（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-13",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未说明预处理/不平衡处理（规则扩展补标）"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "未报告随机种子（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "全文无局限性讨论（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-REF-01",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "悬空引用 [99]"
+    },
+    {
+      "checklist_item_id": "R-REF-02",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 1
+      },
+      "note": "无参考文献章节"
+    }
+  ]
+}

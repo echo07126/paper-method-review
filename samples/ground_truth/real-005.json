@@ -1,0 +1,19 @@
+{
+  "sample_id": "real-005",
+  "title": "通过活体胃癌类器官中的纳米机械振动解析抗癌药物疗效",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13460407",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 8
+      },
+      "note": "缺少局限讨论（非 AI 实证场景，模型类条目不适用）"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注"
+}

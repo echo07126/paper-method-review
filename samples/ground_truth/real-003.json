@@ -1,0 +1,35 @@
+{
+  "sample_id": "real-003",
+  "title": "面向皮肤癌诊断的图像驱动多模态深度学习：皮肤镜图像、临床数据与知识图谱的交叉注意力融合",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13469167",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "10,015 张图像但未见样本量依据"
+    },
+    {
+      "checklist_item_id": "R-07",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "报告 p 值但未说明检验方法"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 3
+      },
+      "note": "报告性能但未见置信区间"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注"
+}

@@ -1,0 +1,10 @@
+{
+  "sample_id": "blind-003",
+  "title": "多尺度卷积与类别加权损失的中文短文本分类：基准实验与统计检验（规范实证）",
+  "type": "empirical",
+  "source": "用户提供（盲测）",
+  "license": "user-provided",
+  "language": "zh",
+  "items": [],
+  "note": "规范良好的实证论文盲测：期望 0 问题（检验误报）；详见 docs/evaluation/blind-tests/blind-003-中文短文本分类.md"
+}

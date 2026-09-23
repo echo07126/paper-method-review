@@ -1,0 +1,46 @@
+:root {
+  --accent: #0e9f8a;
+  --accent-strong: #0b7f6e;
+  --accent-soft: #e2f6f2;
+  --accent-ink: #0a5c50;
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --ink: #1b2230;
+  --ink-2: #5c6472;
+  --ink-3: #9aa1ae;
+  --line: #e6e8f0;
+  --sev-high: #e5484d;
+  --sev-high-bg: #fdebec;
+  --sev-mid: #e8860c;
+  --sev-mid-bg: #fdf2e0;
+  --sev-low: #c8961b;
+  --sev-low-bg: #faf3dd;
+  --pass: #2f9e5f;
+  --pass-bg: #e7f6ec;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(20, 24, 40, 0.05);
+  padding: 16px;
+}
+
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-main { flex: 1; width: 100%; max-width: 1260px; margin: 0 auto; padding: 20px 24px 28px; }
+.sev-high { color: var(--sev-high); }
+.sev-mid { color: var(--sev-mid); }
+.sev-low { color: var(--sev-low); }

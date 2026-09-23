@@ -1,0 +1,123 @@
+{
+  "sample_id": "blind-004",
+  "title": "基于多尺度卷积与改进注意力机制的中文短文本分类方法（预埋缺陷实证）",
+  "type": "planted",
+  "source": "用户提供（盲测）",
+  "license": "user-provided",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 11
+      },
+      "note": "三个数据集均未给出样本量依据/功效分析"
+    },
+    {
+      "checklist_item_id": "R-03",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 27
+      },
+      "note": "4.1 未给出划分比例与随机种子"
+    },
+    {
+      "checklist_item_id": "R-04",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 29
+      },
+      "note": "仅以 BERT 作为单一基线"
+    },
+    {
+      "checklist_item_id": "R-05",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 14
+      },
+      "note": "提出“改进的注意力模块”，全文无消融实验"
+    },
+    {
+      "checklist_item_id": "R-06",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 24
+      },
+      "note": "只报告参数量/时间/耗时等工程指标，无分类性能指标"
+    },
+    {
+      "checklist_item_id": "R-07",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 39
+      },
+      "note": "报告 p<0.05 但未说明检验方法"
+    },
+    {
+      "checklist_item_id": "R-08",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 37
+      },
+      "note": "3 数据集×4 模型比较未见多重比较校正"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 39
+      },
+      "note": "未报告置信区间/效应量"
+    },
+    {
+      "checklist_item_id": "R-10",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 31
+      },
+      "note": "未报告重复次数与方差"
+    },
+    {
+      "checklist_item_id": "R-11",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 43
+      },
+      "note": "结论“普遍适用，可推广至各类文本分类任务”"
+    },
+    {
+      "checklist_item_id": "R-12",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 21
+      },
+      "note": "只列超参数取值，无搜索范围/依据"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 21
+      },
+      "note": "未报告随机种子与代码可得性"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 41
+      },
+      "note": "讨论/结论均无局限性"
+    },
+    {
+      "checklist_item_id": "R-REF-01",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 8
+      },
+      "note": "正文引用 [99]，参考文献表无此条"
+    }
+  ],
+  "note": "预埋缺陷论文（生成方自检 16/16 落位）；本清单为人工核对后可判定的 14 条；详见 docs/evaluation/blind-tests/blind-004-预埋缺陷实证论文.md"
+}

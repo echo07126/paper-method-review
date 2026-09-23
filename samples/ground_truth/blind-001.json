@@ -1,0 +1,10 @@
+{
+  "sample_id": "blind-001",
+  "title": "机器学习中的线性回归：原理、方法与研究进展（综述/理论）",
+  "type": "review",
+  "source": "用户提供（盲测）",
+  "license": "user-provided",
+  "language": "zh",
+  "items": [],
+  "note": "综述/理论论文盲测：系统应识别类型、跳过实证类检查、引用对账通过；详见 docs/evaluation/blind-tests/blind-001-机器学习中的线性回归.md"
+}
