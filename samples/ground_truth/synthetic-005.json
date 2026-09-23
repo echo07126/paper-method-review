@@ -1,0 +1,9 @@
+{
+  "sample_id": "synthetic-005",
+  "title": "规范良好样本（负对照：应无 problem 输出）",
+  "type": "fixture",
+  "source": null,
+  "license": "self-authored",
+  "language": "zh",
+  "items": []
+}

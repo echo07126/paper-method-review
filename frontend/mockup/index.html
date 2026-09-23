@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>论文方法论审查助手 · 界面原型 v0.1</title>
+<style>
+  :root{
+    --accent:#0e9f8a; --accent-strong:#0b7f6e; --accent-soft:#e2f6f2; --accent-ink:#0a5c50;
+    --bg:#f5f6fa; --panel:#ffffff; --ink:#1b2230; --ink-2:#5c6472; --ink-3:#9aa1ae;
+    --line:#e6e8f0; --line-strong:#d4d8e3;
+    --sev-high:#e5484d; --sev-high-bg:#fdebec;
+    --sev-mid:#e8860c; --sev-mid-bg:#fdf2e0;
+    --sev-low:#c8961b; --sev-low-bg:#faf3dd;
+    --pass:#2f9e5f; --pass-bg:#e7f6ec;
+    --radius:14px; --shadow:0 1px 2px rgba(20,24,40,.05), 0 8px 24px rgba(20,24,40,.05);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  }
+  body[data-theme="teal"]{--accent:#0e9f8a;--accent-strong:#0b7f6e;--accent-soft:#e2f6f2;--accent-ink:#0a5c50;} body[data-theme="indigo"]{--accent:#4f46e5;--accent-strong:#4338ca;--accent-soft:#eef2ff;--accent-ink:#312e81;}
+  body[data-theme="slate"]{--accent:#37506b;--accent-strong:#2a3f55;--accent-soft:#e9eef3;--accent-ink:#22303f;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6}
+  button{font-family:inherit;cursor:pointer}
+  .topbar{display:flex;align-items:center;gap:20px;padding:12px 28px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;white-space:nowrap}
+  .logo{width:30px;height:30px;border-radius:9px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700;letter-spacing:1px}
+  .tag{font-size:11px;color:var(--accent-ink);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:1px 8px;font-weight:500}
+  .steps{display:flex;gap:4px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px}
+  .steps button{border:none;background:transparent;color:var(--ink-2);font-size:13px;padding:6px 14px;border-radius:999px;font-weight:500}
+  .steps button.active{background:var(--accent);color:#fff}
+  .guest{font-size:12px;color:var(--ink-3);white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .guest::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--pass);display:inline-block}
+  main{max-width:1260px;margin:0 auto;padding:28px 24px 60px}
+  .view{display:none}
+  .view.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .btn{border:1px solid var(--line-strong);background:#fff;color:var(--ink);padding:9px 18px;border-radius:10px;font-size:14px;font-weight:500}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-strong)}
+  .btn.ghost{border-color:transparent;background:var(--accent-soft);color:var(--accent-ink)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px}
+  .chip.high{background:var(--sev-high-bg);color:var(--sev-high)}
+  .chip.mid{background:var(--sev-mid-bg);color:var(--sev-mid)}
+  .chip.low{background:var(--sev-low-bg);color:var(--sev-low)}
+  .chip.pass{background:var(--pass-bg);color:var(--pass)}
+  .muted{color:var(--ink-2)} .tiny{color:var(--ink-3);font-size:12px}
+  footer{border-top:1px solid var(--line);background:var(--panel);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:12px;color:var(--ink-3);flex-wrap:wrap}
+  .palette{display:flex;align-items:center;gap:8px}
+  .swatch{width:22px;height:22px;border-radius:7px;border:2px solid #fff;box-shadow:0 0 0 1px var(--line-strong);cursor:pointer}
+  /* 上传页 */
+  .upload-wrap{max-width:760px;margin:40px auto 0;text-align:center}
+  .hero-kicker{color:var(--accent-strong);font-weight:600;letter-spacing:.5px}
+  .upload-wrap h1{font-size:30px;margin:10px 0 12px;font-weight:700}
+  .dropzone{margin:26px auto 16px;padding:44px 20px;border:2px dashed var(--line-strong);border-radius:var(--radius);background:var(--panel);max-width:560px;transition:.15s}
+  .dropzone:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .dz-icon{font-size:34px}
+  .flow-mini{display:flex;justify-content:center;gap:10px;margin:22px 0;font-size:13px;color:var(--ink-2)}
+  .flow-mini b{color:var(--accent-strong)}
+  .privacy-note{max-width:640px;margin:18px auto 0;font-size:12px;color:var(--ink-3);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  /* 解析预览页 */
+  .split{display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start}
+  .outline-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid transparent;border-radius:10px;cursor:pointer;font-size:13px}
+  .outline-item:hover{background:var(--bg)}
+  .outline-item.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+  .ok-dot{width:7px;height:7px;border-radius:50%;background:var(--pass);flex:none}
+  .warn-dot{width:7px;height:7px;border-radius:50%;background:var(--sev-mid);flex:none}
+  .paper{max-width:760px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:34px 40px;font-size:13.5px}
+  .paper h2{font-size:17px;margin-bottom:4px}
+  .paper .authors{color:var(--ink-3);font-size:12px;margin-bottom:14px}
+  .paper p{margin:10px 0;text-align:justify}
+  .paper sup{color:var(--accent-strong);font-weight:600;font-size:10px}
+  .paper .hl{background:#ffe58f;border-radius:3px;box-shadow:0 0 0 2px #ffe58f}
+  /* 报告页 */
+  .toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .toolbar .title{font-size:17px;font-weight:700}
+  .statrow{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .stat{flex:1;min-width:130px;padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+  .stat .num{font-size:26px;font-weight:700;line-height:1.2}
+  .stat .lbl{font-size:12px;color:var(--ink-2)}
+  .report-grid{display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start}
+  .list-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .finding{border-bottom:1px solid var(--line);padding:12px 16px;cursor:pointer;transition:.12s}
+  .finding:last-child{border-bottom:none}
+  .finding:hover{background:var(--bg)}
+  .finding.active{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  .finding .f-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .finding .f-title{font-weight:600;font-size:13.5px}
+  .finding .f-meta{font-size:11.5px;color:var(--ink-3);display:flex;gap:10px;flex-wrap:wrap}
+  .f-actions{display:flex;gap:8px;margin-top:8px}
+  .f-actions button{font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--line-strong);background:#fff}
+  .f-actions .ask{color:var(--accent);border-color:var(--accent)}
+  .paper-col{position:sticky;top:70px}
+  /* 抽屉 */
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:400px;background:#fff;box-shadow:-12px 0 40px rgba(20,24,40,.12);transform:translateX(105%);transition:.22s ease;z-index:80;display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .drawer-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .bubble{max-width:86%;padding:9px 13px;border-radius:12px;font-size:13px;margin:8px 0}
+  .bubble.q{background:var(--accent);color:#fff;border-bottom-right-radius:4px;align-self:flex-end}
+  .bubble.a{background:var(--bg);border-bottom-left-radius:4px;align-self:flex-start}
+  .drawer-body{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column}
+  .drawer-input{padding:12px;border-top:1px solid var(--line);display:flex;gap:8px}
+  .drawer-input input{flex:1;border:1px solid var(--line-strong);border-radius:10px;padding:8px 12px;font-size:13px}
+  /* 遮罩进度 */
+  .overlay{position:fixed;inset:0;background:rgba(20,24,40,.45);backdrop-filter:blur(2px);display:none;place-items:center;z-index:90}
+  .overlay.show{display:grid}
+  .progress-card{width:420px;background:#fff;border-radius:16px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+  .bar{height:8px;background:var(--bg);border-radius:99px;overflow:hidden;margin:14px 0 10px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .5s ease}
+  /* 对比页 */
+  .cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .cmp-col .head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .delta-banner{display:flex;gap:14px;align-items:center;background:var(--pass-bg);color:var(--pass);border:1px solid var(--pass);padding:12px 18px;border-radius:12px;margin-bottom:18px;font-weight:600}
+  .cmp-list{list-style:none}
+  .cmp-list li{display:flex;gap:10px;align-items:flex-start;padding:10px 18px;border-bottom:1px solid var(--line);font-size:13px}
+  .cmp-list li .st{flex:none;margin-top:2px}
+  @media(max-width:980px){.split,.report-grid,.cmp-grid{grid-template-columns:1fr}.paper-col{position:static}}
+</style>
+<style>
+  html,body{height:100%}
+  body{min-height:100vh;display:flex;flex-direction:column}
+  main{flex:1 1 auto;width:100%;max-width:1260px;margin:0 auto;padding:18px 24px 24px;display:flex;flex-direction:column}
+  .view.active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;animation:fade .25s ease}
+  #view-upload.active{justify-content:center;padding:6px 0}
+  .upload-wrap{margin:0 auto}
+  .statrow{margin-bottom:14px}
+  .report-grid{flex:1 1 auto;min-height:430px}
+  .report-grid>div:first-child{display:flex;flex-direction:column;min-height:0}
+  #finding-list{flex:1 1 auto;min-height:0;overflow:auto}
+  .split,.cmp-grid{flex:1 1 auto;align-items:stretch;min-height:0}
+  @media(min-height:820px){.report-grid{height:calc(100vh - 320px)}}
+  @media(max-width:980px){.report-grid,.split,.cmp-grid{min-height:0}}
+  .swatch.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent)}
+</style><style>
+  .cmp-grid{grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+  .cmp-col{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .cmp-col .head{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .mini-grid{display:grid;grid-template-columns:250px 1fr;flex:1 1 auto;min-height:0}
+  .mini-list{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:#fff}
+  .cmp-list-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .mini-items{flex:1 1 auto;min-height:0;overflow:auto}
+  .cmp-f{border-bottom:1px solid var(--line);padding:8px 10px;cursor:pointer;font-size:12px}
+  .cmp-f:last-child{border-bottom:none}
+  .cmp-f:hover{background:var(--bg)}
+  .cmp-f.active{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  .cmp-f .t{font-weight:600;margin:3px 0 1px;font-size:12.5px}
+  .cmp-f .m{font-size:11px;color:var(--ink-3)}
+  .paper-scroll{overflow:auto;min-height:0;background:var(--bg);padding:10px;position:relative}
+  .mini-paper{padding:20px 22px;font-size:12.5px}
+  .mini-paper h3{font-size:14px;margin-bottom:2px}
+  .mini-paper .authors{font-size:11px;color:var(--ink-3);margin-bottom:10px}
+  .mini-paper p{margin:8px 0;text-align:justify}
+  .cmp-col .head .lbl{font-weight:700;font-size:14px}
+  @media(max-width:1100px){.cmp-grid{grid-template-columns:1fr}}
+  @media(max-width:720px){.mini-grid{flex-direction:column}.mini-list{flex:none!important;width:100%!important;border-right:none;border-bottom:1px solid var(--line)}.mini-splitter{display:none}}
+</style><style>
+  .cmp-grid{display:flex;align-items:stretch;gap:0}
+  .cmp-col{flex:1 1 0;min-width:0;width:auto}
+  #col-v1{flex:0 0 50%}
+  .cmp-splitter{flex:none;width:8px;margin:0 3px;align-self:stretch;cursor:col-resize;background:var(--line);border-radius:99px}
+  .cmp-splitter:hover{background:var(--accent)}
+  @media(max-width:1160px){.cmp-grid{flex-direction:column}.cmp-splitter{display:none}#col-v1{flex:none!important;width:100%!important}}
+</style><style>
+  body.cmp-view main{max-width:1580px}
+  .mini-grid{display:flex;align-items:stretch;flex:1 1 auto;min-height:0}
+  .mini-list{flex:0 0 250px;width:250px;max-width:70%}
+  .paper-scroll{flex:1 1 auto;min-width:0}
+  .mini-splitter{width:6px;flex:none;cursor:col-resize;background:var(--line);border-radius:99px;margin:0 2px;align-self:stretch}
+  .mini-splitter:hover{background:var(--accent)}
+</style></head>
+<body data-theme="teal">
+<header class="topbar">
+  <div class="brand"><span class="logo">检</span>论文方法论审查助手<span class="tag">界面原型 v0.1</span></div>
+  <nav class="steps">
+    <button data-view="upload" class="active">① 上传</button>
+    <button data-view="parse">② 解析预览</button>
+    <button data-view="report">③ 审查报告</button>
+    <button data-view="compare">④ 修改对比</button>
+  </nav>
+  <div class="guest">访客模式 · 免登录</div>
+</header>
+<main>
+  <!-- ============ ① 上传 ============ -->
+  <section id="view-upload" class="view active">
+    <div class="upload-wrap">
+      <div class="hero-kicker">给论文做一次「方法学体检」</div>
+      <h1>投稿前，先让 AI 帮你查一遍研究设计与统计方法</h1>
+      <p class="muted">上传论文（DOCX）→ 按清单逐条体检 → 输出可定位到原文的审查报告</p>
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">📄</div>
+        <p style="font-weight:600;margin-top:6px">点击或拖拽论文到此处</p>
+        <p class="tiny">当前支持 DOCX · 建议 50MB 以内 · 60 页以内 · 即传即审，可随时删除（PDF 支持将在后续版本提供）</p>
+      </div>
+      <button class="btn primary" id="btn-example" style="padding:11px 26px">✨ 一键体验内置示例论文</button>
+      <div class="flow-mini"><span><b>1</b> 上传与解析</span><span>→</span><span><b>2</b> 结构化审查</span><span>→</span><span><b>3</b> 分级报告与定位</span><span>→</span><span><b>4</b> 修改后对比</span></div>
+      <div class="privacy-note">🔒 隐私说明（原型示意）：论文内容将发送至大模型服务商，仅用于本次审查、不用于训练；可随时删除。示例为自建脱敏演示稿。</div>
+    </div>
+  </section>
+
+  <!-- ============ ② 解析预览 ============ -->
+  <section id="view-parse" class="view">
+    <div class="toolbar">
+      <div class="title">解析预览</div>
+      <span class="chip pass">章节识别 6/7</span>
+      <span class="chip mid">1 处待确认</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn ghost" onclick="go('report')">修正章节边界</button>
+        <button class="btn primary" onclick="runReview()">开始结构化审查 →</button>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card" style="padding:10px">
+        <div style="padding:8px 12px 6px;font-weight:600;font-size:13px">章节大纲</div>
+        <div class="outline-item active"><span class="ok-dot"></span><span>题目 · 摘要</span><span class="tiny" style="margin-left:auto">P1-2</span></div>
+        <div class="outline-item"><span class="ok-dot"></span><span>1 引言</span><span class="tiny" style="margin-left:auto">P2-3</span></div>
+        <div class="outline-item"><span class="ok-dot"></span><span>2 方法</span><span class="tiny" style="margin-left:auto">P3-7</span></div>
+        <div class="outline-item"><span class="warn-dot"></span><span>2.4 模型细节</span><span class="tiny" style="margin-left:auto">P5</span><span class="chip mid" style="font-size:10px">待确认</span></div>
+        <div class="outline-item"><span class="ok-dot"></span><span>3 结果</span><span class="tiny" style="margin-left:auto">P7-9</span></div>
+        <div class="outline-item"><span class="ok-dot"></span><span>4 讨论 · 结论</span><span class="tiny" style="margin-left:auto">P9-11</span></div>
+        <div class="outline-item"><span class="ok-dot"></span><span>References</span><span class="tiny" style="margin-left:auto">P11-13</span></div>
+        <div style="padding:10px 12px;font-size:12px;color:var(--ink-3)">💡 识别不确定的章节可手动修正，修正后重新审查。</div>
+      </div>
+      <div>
+        <div class="paper">
+          <h2>基于深度卷积网络的眼底图像疾病分类：一项实证方法学评估</h2>
+          <div class="authors">演示示例论文（自建脱敏稿）· 用于体验完整审查闭环</div>
+          <p style="color:var(--ink-3);font-size:12px;margin-bottom:6px">2. 方法 ·（节选）</p>
+          <p id="s-m1">本研究纳入某医院 2020–2023 年共 <b>1,240 例</b>眼底彩照，按 8:2 随机划分为训练集与验证集；模型采用 ResNet-50 并在 ImageNet 预训练权重上微调<sup>[3,5]</sup>。</p>
+          <p id="s-m2">超参数（学习率、批大小、早停轮数）在验证集上通过网格搜索确定，最终模型在验证集上的 AUC 达 0.94。</p>
+          <p id="s-m3">为验证模型有效性，将其与 Inception-v3 基线比较，并报告了准确率与 AUC 的均值±标准差<sup>[7]</sup>。</p>
+          <p id="s-m4">由于资源有限，未对注意力机制等关键模块进行消融实验；样本量依据既往同类研究经验确定。</p>
+          <p style="color:var(--ink-3);font-size:12px;margin:14px 0 4px">3. 结果 ·（节选）</p>
+          <p id="s-r1">实验表明，本方法在测试集上平均准确率为 0.912，较 Inception-v3 高 2.1 个百分点（p&lt;0.05）<sup>[8,10]</sup>。</p>
+          <p id="s-r2">综合上述结果可以认为，所提方法在眼底疾病分类任务上具有普遍适用性，可推广至各类医疗影像场景。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- ============ ③ 审查报告 ============ -->
+  <section id="view-report" class="view">
+    <div class="toolbar">
+      <div class="title">审查报告</div>
+      <span class="chip high">严重 2</span><span class="chip mid">中等 2</span><span class="chip low">轻微 2</span><span class="chip pass">通过 8 / 未适用 5</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn">导出 Markdown</button>
+        <button class="btn">导出 Markdown</button>
+        <button class="btn primary" onclick="go('compare')">去修改对比 →</button>
+      </div>
+    </div>
+    <div class="statrow">
+      <div class="stat card"><span class="lbl">检出问题</span><span class="num" style="color:var(--ink)">6</span><span class="tiny">严重 2 · 中等 2 · 轻微 2</span></div>
+      <div class="stat card"><span class="lbl">Top 风险</span><span class="num" style="font-size:15px;font-weight:600;color:var(--sev-high);padding-top:8px">测试集调参（泄漏）</span><span class="tiny">严重 · 2.4 节句 2</span></div>
+      <div class="stat card"><span class="lbl">清单覆盖</span><span class="num">15/15</span><span class="tiny">定量通用 + AI 实证模板</span></div>
+      <div class="stat card"><span class="lbl">审查耗时</span><span class="num" style="font-size:20px">1′42″</span><span class="tiny">tokens 4.1 万 · 约 ¥0.06</span></div>
+    </div>
+    <div class="report-grid">
+      <div class="card" style="align-self:start">
+        <div class="list-head"><b style="font-size:13.5px">问题清单（点击定位原文）</b><span class="tiny">6 项</span></div>
+        <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <span class="chip high">严重</span><span class="chip mid">中等</span><span class="chip low">轻微</span><span class="chip" style="background:var(--bg);color:var(--ink-2)">全部</span>
+        </div>
+        <div id="finding-list"></div>
+      </div>
+      <div class="paper-col">
+        <div class="paper">
+          <h2>基于深度卷积网络的眼底图像疾病分类：一项实证方法学评估</h2>
+          <div class="authors">演示示例论文（自建脱敏稿）· 第 2–3 节原文对照</div>
+          <p style="color:var(--ink-3);font-size:12px;margin-bottom:6px">2. 方法 ·（节选）</p>
+          <p id="r-s-m1">本研究纳入某医院 2020–2023 年共 <b>1,240 例</b>眼底彩照，按 8:2 随机划分为训练集与验证集；模型采用 ResNet-50 并在 ImageNet 预训练权重上微调<sup>[3,5]</sup>。</p>
+          <p id="r-s-m2">超参数（学习率、批大小、早停轮数）在验证集上通过网格搜索确定，最终模型在验证集上的 AUC 达 0.94。</p>
+          <p id="r-s-m3">为验证模型有效性，将其与 Inception-v3 基线比较，并报告了准确率与 AUC 的均值±标准差<sup>[7]</sup>。</p>
+          <p id="r-s-m4">由于资源有限，未对注意力机制等关键模块进行消融实验；样本量依据既往同类研究经验确定。</p>
+          <p style="color:var(--ink-3);font-size:12px;margin:14px 0 4px">3. 结果 ·（节选）</p>
+          <p id="r-s-r1">实验表明，本方法在测试集上平均准确率为 0.912，较 Inception-v3 高 2.1 个百分点（p&lt;0.05）<sup>[8,10]</sup>。</p>
+          <p id="r-s-r2">综合上述结果可以认为，所提方法在眼底疾病分类任务上具有普遍适用性，可推广至各类医疗影像场景。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+    <!-- ============ ④ 修改对比（左初稿 / 右修改稿 · 双报告布局） ============ -->
+  <section id="view-compare" class="view">
+    <div class="toolbar"><div class="title">修改前后对比</div><span class="chip pass">修改稿已复审</span><div style="margin-left:auto"><button class="btn primary" onclick="go('report')">回到报告</button></div></div>
+    <div class="delta-banner">✔ 修改后问题从 6 项降至 2 项（严重 2 → 0），共解决 4 项、无新增 —— 两侧均可点击问题定位到各自原文</div>
+    <div class="cmp-grid" id="cmp-grid">
+      <div class="card cmp-col" id="col-v1">
+        <div class="head"><span class="lbl">修改前 · 初稿</span><span><span class="chip high">严重 2</span> <span class="chip mid">中等 2</span> <span class="chip low">轻微 2</span></span></div>
+        <div class="mini-grid" id="mini-grid-v1">
+          <div class="mini-list">
+            <div class="cmp-list-head"><b>问题清单</b><span class="tiny">6 项 · 点击定位原文</span></div>
+            <div class="mini-items" id="cmp-items-v1"></div>
+          </div>
+          <div class="mini-splitter" id="msplit-v1"></div>
+          <div class="paper-scroll" id="scroll-v1">
+            <div class="paper mini-paper">
+              <h3>基于深度卷积网络的眼底图像疾病分类：一项实证方法学评估</h3>
+              <div class="authors">初稿版本 · 第 2–3 节原文（节选）</div>
+              <p id="p1-m1">本研究纳入某医院 2020–2023 年共 <b>1,240 例</b>眼底彩照，按 8:2 随机划分为训练集与验证集；模型采用 ResNet-50 并在 ImageNet 预训练权重上微调<sup>[3,5]</sup>。</p>
+              <p id="p1-m2">超参数（学习率、批大小、早停轮数）在验证集上通过网格搜索确定，最终模型在验证集上的 AUC 达 0.94。</p>
+              <p id="p1-m3">为验证模型有效性，将其与 Inception-v3 基线比较，并报告了准确率与 AUC 的均值±标准差<sup>[7]</sup>。</p>
+              <p id="p1-m4">由于资源有限，未对注意力机制等关键模块进行消融实验；样本量依据既往同类研究经验确定。</p>
+              <p style="color:var(--ink-3);font-size:12px;margin:12px 0 2px">3. 结果（节选）</p>
+              <p id="p1-r1">实验表明，本方法在测试集上平均准确率为 0.912，较 Inception-v3 高 2.1 个百分点（p&lt;0.05）<sup>[8,10]</sup>。</p>
+              <p id="p1-r2">综合上述结果可以认为，所提方法在眼底疾病分类任务上具有普遍适用性，可推广至各类医疗影像场景。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cmp-splitter" id="cmp-splitter" title="← 拖动调节左右宽度 →"></div>
+      <div class="card cmp-col" id="col-v2">
+        <div class="head"><span class="lbl">修改后 · 修改稿</span><span><span class="chip high">严重 0</span> <span class="chip mid">中等 1</span> <span class="chip low">轻微 1</span></span></div>
+        <div class="mini-grid" id="mini-grid-v2">
+          <div class="mini-list">
+            <div class="cmp-list-head"><b>问题清单</b><span class="tiny">2 项 · 点击定位原文</span></div>
+            <div class="mini-items" id="cmp-items-v2"></div>
+          </div>
+          <div class="mini-splitter" id="msplit-v2"></div>
+          <div class="paper-scroll" id="scroll-v2">
+            <div class="paper mini-paper">
+              <h3>基于深度卷积网络的眼底图像疾病分类：一项实证方法学评估</h3>
+              <div class="authors">修改稿版本 · 第 2–3 节原文（节选）</div>
+              <p id="p2-m1">本研究纳入某医院 2020–2023 年共 <b>1,240 例</b>眼底彩照，按 7:1:2 随机划分为训练 / 验证 / 独立测试集，并固定随机种子 42；模型采用 ResNet-50 并在 ImageNet 预训练权重上微调<sup>[3,5]</sup>。</p>
+              <p id="p2-m2">超参数（学习率、批大小、早停轮数）在训练集上通过 5 折交叉验证确定；最终模型仅在独立测试集上评估一次。</p>
+              <p id="p2-m3">为验证模型有效性，将其与经典方法 VGG16 及 Inception-v3 比较，并报告了均值±标准差与 95% 置信区间<sup>[7]</sup>。</p>
+              <p id="p2-m4">对注意力模块进行了有 / 无消融实验；样本量依据功效分析（α=0.05，功效=0.80，预期 AUC 差 0.05）确定。</p>
+              <p style="color:var(--ink-3);font-size:12px;margin:12px 0 2px">3. 结果（节选）</p>
+              <p id="p2-r1">实验表明，本方法在独立测试集上平均准确率为 0.914，较 Inception-v3 高 1.8 个百分点（配对 t 检验 p=0.012，95%CI [0.4%, 3.1%]）<sup>[8,10]</sup>。</p>
+              <p id="p2-r2">综合上述结果表明，本方法在眼底疾病分类上表现优异，可进一步推广至视网膜病变筛查等实际应用场景。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section></main>
+
+<footer>
+  <span>示例为自建脱敏演示稿 · 即传即审 · 可随时删除 · 不用于模型训练</span>
+  <div class="palette">主色预览：<span class="swatch" style="background:#4f46e5" data-theme="indigo" title="靛蓝"></span><span class="swatch" style="background:#0e9f8a" data-theme="teal" title="青绿"></span><span class="swatch" style="background:#37506b" data-theme="slate" title="灰蓝"></span><span class="tiny">点击切换</span></div>
+</footer>
+
+<!-- 追问抽屉 -->
+<aside class="drawer" id="drawer">
+  <div class="drawer-head"><b id="drawer-title">追问</b><button class="btn ghost" style="padding:4px 10px" onclick="closeDrawer()">✕</button></div>
+  <div class="drawer-body" id="drawer-body"></div>
+  <div class="drawer-input"><input placeholder="就这条问题继续提问（原型）…"><button class="btn primary" style="padding:8px 14px">发送</button></div>
+</aside>
+
+<!-- 审查进度遮罩 -->
+<div class="overlay" id="overlay">
+  <div class="progress-card">
+    <b>正在结构化审查…</b>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="tiny" id="stage">上传示例论文</div>
+  </div>
+</div>
+
+<script>
+  var FINDINGS = [
+    {id:'f1',sev:'high',title:'测试集调参（信息泄漏风险）',loc:'2.4 节 · 句 2',rule:'R-06 · 数据划分',targets:['r-s-m2'],tip:'修改建议：明确划分训练/验证/测试集，仅在训练集上调参，并在测试集上一次性评估。',q:'这条严重问题具体指哪里？我该怎么改？',a:'指「超参数…在验证集上通过网格搜索确定」但后文用同一批数据（含验证集）比较最终结果，存在选择偏差。建议把流程改为：训练集调参 → 验证集选型 → 独立测试集终评，并写明随机种子，保证可复现。示例句式为「超参数在训练集上通过 5 折交叉验证确定，最终模型仅在独立测试集上评估一次」。'},
+    {id:'f2',sev:'high',title:'显著性检验缺失',loc:'3. 结果 · 句 1',rule:'R-09 · 统计检验',targets:['r-s-r1'],tip:'修改建议：对多次独立运行或样本间的指标差异补充配对检验与置信区间。',q:'怎么补一个合适的显著性检验？',a:'当前仅报告均值高 2.1 个百分点与一个笼统的 p&lt;0.05，未说明检验对象。建议对同一测试集上多次重复实验的指标差做配对 t 检验或 Wilcoxon 符号秩检验，并报告效应量与 95% 置信区间。若只有单次运行，请说明并避免使用 p 值表述。'},
+    {id:'f3',sev:'mid',title:'基线不完整',loc:'2.4 节 · 句 3',rule:'R-04 · 基线对比',targets:['r-s-m3'],tip:'修改建议：补充至少 2 个近两年公开基线与一个经典方法，并统一训练/评测协议。',q:'基线选几个、怎么选才不算「不完整」？',a:'建议至少包含：① 一个经典方法（证明不是被普遍超越的旧方法）；② 1–2 个近期公开 SOTA（证明相对前沿的增益）。所有方法必须在同一数据划分与同一评测指标下复现，避免直接抄录原文数字。'},
+    {id:'f4',sev:'mid',title:'消融实验缺失',loc:'2.4 节 · 句 4',rule:'R-05 · 消融完整',targets:['r-s-m4'],tip:'修改建议：对每个关键模块（如注意力机制、预训练策略）分别做移除/替换实验。',q:'消融要做到什么程度？',a:'至少对论文声称有贡献的每个模块做「有/无」对照，并说明默认设置的选择依据。若某个模块是沿用他人工作，可在文中说明并引用，不必全部重做。'},
+    {id:'f5',sev:'low',title:'样本量依据缺失',loc:'2.4 节 · 句 4',rule:'R-02 · 样本量',targets:['r-s-m4'],tip:'修改建议：补充样本量确定依据或功效分析（可选：给出数据可得性说明）。',q:'医学影像论文怎么交代样本量？',a:'建议说明样本量由什么决定：前期功效分析（给出 α、功效、预期效应量）或数据可得性限制，并写明纳入/排除标准。实在无法做功效分析时，应如实说明并把它列为局限。'},
+    {id:'f6',sev:'low',title:'结论外推过度',loc:'3. 结果 · 句 2',rule:'R-11 · 结论外推',targets:['r-s-r2'],tip:'修改建议：将「普遍适用」改为「在同类单中心数据上初步有效」，并列入局限。',q:'怎么改写才不会过度外推？',a:'当前数据为单中心回顾性数据，却得出「普遍适用、可推广至各类医疗影像场景」的结论。建议限定范围，例如：「本研究在单中心眼底影像数据上取得初步效果，其跨设备、跨人群的泛化性仍需多中心前瞻性验证」。'}
+  ];
+  function el(id){return document.getElementById(id)}
+  function go(view){
+    document.querySelectorAll('.steps button').forEach(function(b){b.classList.toggle('active', b.dataset.view===view)});
+    document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active', v.id==='view-'+view)});
+    if(view==='report') renderFindings();
+    if(view==='compare') renderCompare();
+    document.body.classList.toggle('cmp-view', view==='compare');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.steps button').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.view)})});
+  document.querySelectorAll('.palette .swatch').forEach(function(s){s.addEventListener('click',function(){document.body.dataset.theme=s.dataset.theme})});
+  el('btn-example').addEventListener('click',runReview);
+  function renderFindings(){
+    var box=el('finding-list'); if(box.dataset.rendered) return; box.dataset.rendered=1;
+    FINDINGS.forEach(function(f){
+      var d=document.createElement('div'); d.className='finding'; d.id=f.id;
+      d.innerHTML='<div class="f-top"><span class="chip '+f.sev+'">'+(f.sev==='high'?'严重':f.sev==='mid'?'中等':'轻微')+'</span><span class="f-title">'+f.title+'</span></div>'+
+        '<div class="f-meta"><span>📍 '+f.loc+'</span><span>判定：'+f.rule+'</span></div>'+
+        '<div class="f-actions"><button onclick="locate(\''+f.id+'\')">定位原文</button><button class="ask" onclick="openAsk(\''+f.id+'\')">追问这条</button></div>';
+      d.addEventListener('click',function(){locate(f.id)});
+      box.appendChild(d);
+    });
+  }
+  var CMP = {
+    v1:[
+      {id:'c1-1',sev:'high',t:'测试集调参（信息泄漏风险）',m:'2.4 节 · 句 2 · R-06',a:'p1-m2'},
+      {id:'c1-2',sev:'high',t:'显著性检验缺失',m:'3. 结果 · 句 1 · R-09',a:'p1-r1'},
+      {id:'c1-3',sev:'mid',t:'基线不完整',m:'2.4 节 · 句 3 · R-04',a:'p1-m3'},
+      {id:'c1-4',sev:'mid',t:'消融实验缺失',m:'2.4 节 · 句 4 · R-05',a:'p1-m4'},
+      {id:'c1-5',sev:'low',t:'样本量依据缺失',m:'2.4 节 · 句 4 · R-02',a:'p1-m4'},
+      {id:'c1-6',sev:'low',t:'结论外推过度',m:'3. 结果 · 句 2 · R-11',a:'p1-r2'}
+    ],
+    v2:[
+      {id:'c2-1',sev:'mid',t:'基线不完整（仍缺近期 SOTA）',m:'2.4 节 · 句 3 · R-04',a:'p2-m3'},
+      {id:'c2-2',sev:'low',t:'结论外推（可再限定范围）',m:'3. 结果 · 句 2 · R-11',a:'p2-r2'}
+    ]
+  };
+  function sevLabel(s){return s==='high'?'严重':s==='mid'?'中等':'轻微'}
+  function renderCompare(){
+    ['v1','v2'].forEach(function(side){
+      var box=el('cmp-items-'+side);
+      if(!box||box.dataset.rendered)return; box.dataset.rendered=1;
+      CMP[side].forEach(function(f){
+        var d=document.createElement('div'); d.className='cmp-f'; d.id=f.id;
+        d.innerHTML='<div><span class="chip '+f.sev+'">'+sevLabel(f.sev)+'</span></div><div class="t">'+f.t+'</div><div class="m">📍 '+f.m+'</div>';
+        d.addEventListener('click',function(){locateCmp(f.id)});
+        box.appendChild(d);
+      });
+    });
+  }
+  function locateCmp(id){
+    var side=id.indexOf('c1-')===0?'v1':'v2', item=null;
+    CMP[side].forEach(function(f){if(f.id===id)item=f}); if(!item)return;
+    var holder=el('scroll-'+side), box=el('cmp-items-'+side);
+    Array.prototype.forEach.call(box.children,function(n){n.classList.toggle('active',n.id===id)});
+    holder.querySelectorAll('.hl').forEach(function(n){n.classList.remove('hl')});
+    var target=el(item.a); if(!target)return;
+    target.classList.add('hl');
+    holder.scrollTop=target.offsetTop-holder.clientHeight/2+80;
+  }
+  function clearHl(){document.querySelectorAll('.paper .hl').forEach(function(n){n.classList.remove('hl')})}
+  function locate(id){
+    var f=FINDINGS.filter(function(x){return x.id===id})[0]; if(!f) return;
+    document.querySelectorAll('.finding').forEach(function(n){n.classList.toggle('active',n.id===id)});
+    clearHl();
+    f.targets.forEach(function(t){var n=el(t); if(n){n.classList.add('hl'); n.scrollIntoView({behavior:'smooth',block:'center'})}});
+  }
+  function openAsk(id){
+    var f=FINDINGS.filter(function(x){return x.id===id})[0]; if(!f) return;
+    el('drawer-title').textContent='追问 · '+f.title;
+    el('drawer-body').innerHTML='<div class="bubble q">'+f.q+'</div><div class="bubble a">'+f.a+'</div><div class="bubble q">'+f.tip+'</div>';
+    el('drawer').classList.add('open');
+  }
+  function closeDrawer(){el('drawer').classList.remove('open')}
+  function runReview(){
+    var stages=['正在解析文档…','识别章节结构…','抽取方法学要素…','逐条执行审查清单…','汇总分级报告…'];
+    el('overlay').classList.add('show'); var i=0, w=0;
+    el('stage').textContent=stages[0];
+    var t=setInterval(function(){
+      w+=8+Math.random()*10; if(w>100)w=100; el('bar').style.width=w+'%';
+      if(w<100){el('stage').textContent=stages[Math.min(stages.length-1,Math.floor(w/100*stages.length))]}
+      else{clearInterval(t); setTimeout(function(){el('overlay').classList.remove('show'); go('report')},350)}
+    },180);
+  }
+</script>
+<script>
+  (function(){
+    var sel=document.querySelector('.palette .swatch[data-theme="teal"]');
+    if(sel){sel.classList.add('sel')}
+    document.querySelectorAll('.palette .swatch').forEach(function(s){
+      s.addEventListener('click',function(){
+        document.querySelectorAll('.palette .swatch').forEach(function(x){x.classList.remove('sel')});
+        s.classList.add('sel');
+      });
+    });
+  })();
+</script><script>
+  (function(){
+    var grid=document.getElementById('cmp-grid'), col1=document.getElementById('col-v1'), splitter=document.getElementById('cmp-splitter');
+    if(!grid||!col1||!splitter)return;
+    var dragging=false;
+    function setPct(x){
+      var rect=grid.getBoundingClientRect(); if(rect.width===0)return;
+      var pct=(x-rect.left)/rect.width*100; pct=Math.max(30,Math.min(70,pct));
+      col1.style.flex='0 0 '+pct+'%';
+    }
+    splitter.addEventListener('mousedown',function(e){dragging=true;document.body.style.userSelect='none';e.preventDefault()});
+    document.addEventListener('mousemove',function(e){if(dragging)setPct(e.clientX)});
+    document.addEventListener('mouseup',function(){dragging=false;document.body.style.userSelect=''});
+    splitter.addEventListener('touchstart',function(e){dragging=true;document.body.style.userSelect='none';e.preventDefault()},{passive:false});
+    document.addEventListener('touchmove',function(e){if(dragging){var t=e.touches[0];setPct(t.clientX)}},{passive:false});
+    document.addEventListener('touchend',function(){dragging=false;document.body.style.userSelect=''});
+  })();
+</script><script>
+  (function(){
+    function wireMini(splitId, gridId){
+      var split=document.getElementById(splitId), grid=document.getElementById(gridId);
+      if(!split||!grid)return;
+      var list=grid.querySelector('.mini-list'); if(!list)return;
+      var dragging=false;
+      function setW(x){
+        var rect=grid.getBoundingClientRect(); if(rect.width===0)return;
+        var w=x-rect.left; var maxW=Math.max(200, rect.width-280);
+        w=Math.max(150, Math.min(w, maxW));
+        list.style.flex='0 0 '+w+'px'; list.style.width=w+'px';
+      }
+      split.addEventListener('mousedown',function(e){dragging=true;document.body.style.userSelect='none';e.preventDefault()});
+      document.addEventListener('mousemove',function(e){if(dragging)setW(e.clientX)});
+      document.addEventListener('mouseup',function(){dragging=false;document.body.style.userSelect=''});
+      split.addEventListener('touchstart',function(e){dragging=true;document.body.style.userSelect='none';e.preventDefault()},{passive:false});
+      document.addEventListener('touchmove',function(e){if(dragging)setW(e.touches[0].clientX)},{passive:false});
+      document.addEventListener('touchend',function(){dragging=false;document.body.style.userSelect=''});
+    }
+    wireMini('msplit-v1','mini-grid-v1');
+    wireMini('msplit-v2','mini-grid-v2');
+  })();
+</script></body>
+</html>

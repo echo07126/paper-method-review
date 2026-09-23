@@ -1,0 +1,53 @@
+# 单机部署：仅绑定本机回环，由前置 Nginx / 云负载均衡终止 TLS 并对外暴露 443。
+# 日志轮转与保留期见下方 x-logging 配置（对应上线待办第 5 项：日志保留 ≤30 天）。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "30"
+
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DB_PATH: /app/data/app.db
+      TEMP_DIR: /app/data/tmp
+      CHECKLIST_DIR: /app/checklists
+      # 生产环境必须显式声明，避免误用开发默认值
+      APP_ENV: ${APP_ENV:-dev}
+      DEBUG: ${DEBUG:-false}
+      DOCS_ENABLED: ${DOCS_ENABLED:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+    volumes:
+      - ./data:/app/data
+      - ./checklists:/app/checklists:ro
+    ports:
+      - "127.0.0.1:8000:8000"   # 不暴露公网；经 frontend 容器的 /api 代理访问
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # 交由前置反代 terminating TLS；此处仅用于生成绝对链接
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:8080}
+    ports:
+      - "127.0.0.1:8080:8080"   # 不暴露公网；由前置 Nginx 反代 443 -> 该端口
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

@@ -1,0 +1,67 @@
+{
+  "sample_id": "real-002",
+  "title": "基于MRI的深度学习引导多组学发现NBPF4作为乳腺癌淋巴结转移治疗靶点",
+  "type": "real",
+  "source": "https://europepmc.org/article/MED/PMC13500915",
+  "license": "cc by",
+  "language": "zh",
+  "items": [
+    {
+      "checklist_item_id": "R-02",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "多中心队列但未见样本量依据/功效分析"
+    },
+    {
+      "checklist_item_id": "R-03",
+      "severity_expected": "high",
+      "anchor": {
+        "paragraph_index": 4
+      },
+      "note": "未描述数据划分/验证方案（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-04",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 8
+      },
+      "note": "仅单一 MV3S 架构，缺少基线模型对比"
+    },
+    {
+      "checklist_item_id": "R-08",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 7
+      },
+      "note": "多组学通路比较未见多重比较校正（复核补标）"
+    },
+    {
+      "checklist_item_id": "R-09",
+      "severity_expected": "mid",
+      "anchor": {
+        "paragraph_index": 4
+      },
+      "note": "AUC 未给置信区间"
+    },
+    {
+      "checklist_item_id": "R-14",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 2
+      },
+      "note": "未报告随机种子/代码与数据可得性"
+    },
+    {
+      "checklist_item_id": "R-15",
+      "severity_expected": "low",
+      "anchor": {
+        "paragraph_index": 8
+      },
+      "note": "未见局限性讨论"
+    }
+  ],
+  "note": "改写自 Europe PMC 开放获取全文（CC-BY）；标准答案由人工逐条核对标注；R-03/R-04/R-14 锚点按“该信息应出现的段落”调整"
+}
