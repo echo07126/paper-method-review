@@ -57,6 +57,9 @@ watch(
   },
   { immediate: true },
 );
+
+/** 供对比页等父组件主动触发定位（watch 只覆盖高亮值变化）。 */
+defineExpose({ scrollToParagraph: scrollToHighlight });
 </script>
 
 <template>

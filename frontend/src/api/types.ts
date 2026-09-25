@@ -98,6 +98,30 @@ export interface DocumentResponse {
   parser: string | null;
 }
 
+export interface CompareFinding {
+  checklist_item_id: string;
+  headline: string;
+  severity: Severity;
+  verdict: Verdict;
+  anchors: Anchor[];
+  description?: string;
+  suggestion?: string;
+  suggested_revision?: string;
+}
+
+export interface CompareResponse {
+  before: Record<string, number>;
+  after: Record<string, number>;
+  resolved: string[];
+  new: string[];
+  kept: string[];
+  before_findings: CompareFinding[];
+  after_findings: CompareFinding[];
+  resolved_findings: CompareFinding[];
+  new_findings: CompareFinding[];
+  kept_findings: CompareFinding[];
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
