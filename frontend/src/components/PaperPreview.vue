@@ -7,6 +7,10 @@ const props = defineProps<{
   paragraphs: Array<{ index: number; text: string }>;
   tables?: Table[];
   highlightIndex?: number | null;
+  /** 由父组件统一滚动时置 true：自身只负责高亮，不再抢占滚动 */
+  externalScroll?: boolean;
+  /** 最小高度：内容不足时仍撑开容器，避免看起来「显示不全」 */
+  minHeight?: string;
 }>();
 
 type Block = { kind: "para"; index: number; text: string } | { kind: "table"; table: Table };
@@ -46,6 +50,8 @@ async function scrollToHighlight(index: number | null | undefined) {
     host.querySelector<HTMLElement>(`[data-paragraph-index="${index}"]`) ??
     host.querySelector<HTMLElement>(".hl");
   if (!target) return;
+  // 表格等块状元素可能尚未完成布局，用 rAF 再量一次位置，避免定位偏移
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const top = target.offsetTop - host.clientHeight / 2 + target.clientHeight / 2;
   host.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
 }
@@ -53,6 +59,7 @@ async function scrollToHighlight(index: number | null | undefined) {
 watch(
   () => props.highlightIndex,
   (index) => {
+    if (props.externalScroll) return;
     void scrollToHighlight(index);
   },
   { immediate: true },
@@ -63,7 +70,7 @@ defineExpose({ scrollToParagraph: scrollToHighlight });
 </script>
 
 <template>
-  <div ref="paper" class="card paper">
+  <div ref="paper" class="card paper" :style="minHeight ? { minHeight } : undefined">
     <template v-for="(block, position) in blocks" :key="position">
       <p
         v-if="block.kind === 'para'"
