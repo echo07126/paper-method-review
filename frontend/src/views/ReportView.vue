@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import client from "@/api/client";
 import type { DocumentResponse, Finding, ReviewReport, Table } from "@/api/types";
@@ -10,14 +10,13 @@ import PaperPreview from "@/components/PaperPreview.vue";
 import { useSessionStore } from "@/stores/session";
 
 const route = useRoute();
+const router = useRouter();
 const store = useSessionStore();
 const report = ref<ReviewReport | null>(null);
 const paragraphs = ref<Array<{ index: number; text: string }>>([]);
 const tables = ref<Table[]>([]);
 const activeFinding = ref<Finding | null>(null);
 const drawerOpen = ref(false);
-/** 「修改后展示」为可选：默认隐藏，避免改动判定口径；用户可随时展开。 */
-const showRevision = ref(false);
 const filter = ref<"all" | "problem" | "uncertain" | "pass">("all");
 
 const visibleFindings = computed(() => {
@@ -72,6 +71,11 @@ function askFinding(finding: Finding) {
   drawerOpen.value = true;
 }
 
+/** 去修改对比：带上当前报告，对比页会据此生成修改稿并做二次真实审查。 */
+function goCompare() {
+  router.push({ name: "compare", query: { before: report.value?.report_id ?? store.reportId } });
+}
+
 /** 自由提问：不带 finding，后端据此注入全文并沿用会话记忆 */
 function openFreeChat() {
   activeFinding.value = null;
@@ -100,15 +104,10 @@ const severityFilters = computed(() => ({
       <button class="chip low" :class="{ on: filter === 'pass' }" @click="filter = filter === 'pass' ? 'all' : 'pass'">
         通过 {{ report.counts.pass ?? 0 }}
       </button>
-      <span class="chip revision" :class="{ on: showRevision }">
-        <label class="revision-toggle">
-          <input v-model="showRevision" type="checkbox" />
-          显示修改后
-        </label>
-      </span>
       <div class="toolbar-actions">
         <a class="btn" :href="`/api/v1/reports/${report.report_id}/export?format=markdown`" target="_blank">导出 Markdown</a>
-        <button class="btn primary" @click="openFreeChat">全文自由提问 →</button>
+        <button class="btn" @click="openFreeChat">全文自由提问</button>
+        <button class="btn primary" @click="goCompare">去修改对比 →</button>
       </div>
     </div>
 
@@ -155,7 +154,6 @@ const severityFilters = computed(() => ({
         <FindingList
           :findings="visibleFindings"
           :active-id="activeFinding?.finding_id"
-          :show-revision="showRevision"
           @select="selectFinding"
           @ask="askFinding"
         />
@@ -192,8 +190,6 @@ const severityFilters = computed(() => ({
 .chip.low { background: var(--sev-low-bg); color: var(--sev-low); }
 .chip.pass { background: var(--pass-bg); color: var(--pass); }
 .chip.on { outline: 2px solid var(--accent); outline-offset: 1px; }
-.chip.revision { cursor: default; }
-.revision-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .statrow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .stat { flex: 1; min-width: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
 .stat .num { font-size: 24px; font-weight: 700; line-height: 1.25; }

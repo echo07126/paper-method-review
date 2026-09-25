@@ -23,8 +23,6 @@ export interface Finding {
   suggestion?: string;
   anchors: Anchor[];
   evidence_elements?: string[];
-  /** 「修改后展示」（可选）：把建议落实为可直接对照的改写示例 */
-  suggested_revision?: string;
   provenance?: Record<string, unknown>;
 }
 
@@ -106,7 +104,15 @@ export interface CompareFinding {
   anchors: Anchor[];
   description?: string;
   suggestion?: string;
-  suggested_revision?: string;
+  /** rewritten=示范改写已落到修改稿；manual=依赖图表/数据需作者确认；pending=未定位到段落 */
+  revision_status?: "rewritten" | "manual" | "pending";
+  revision_note?: string;
+}
+
+export interface CompareRequest {
+  before_report_id: string;
+  after_report_id?: string | null;
+  use_llm?: boolean;
 }
 
 export interface CompareResponse {
