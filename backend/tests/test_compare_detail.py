@@ -45,3 +45,22 @@ def test_upload_and_parse_follow_mockup_layout() -> None:
     assert "dropzone" in upload and "flow-mini" in upload and "privacy-note" in upload
     assert "outline-item" in parse and "sectionRange" in parse
     assert "PaperPreview" not in parse or "data-paragraph-index" in parse
+
+
+def test_compare_view_locate_uses_rendered_anchor() -> None:
+    """对比页定位必须基于 PaperPreview 渲染出的段落锚点，且两栏原文直接展开（无内滚）。"""
+    view = (
+        Path(__file__).resolve().parents[2] / "frontend" / "src" / "views" / "CompareView.vue"
+    ).read_text(encoding="utf-8")
+    paper = (
+        Path(__file__).resolve().parents[2]
+        / "frontend"
+        / "src"
+        / "components"
+        / "PaperPreview.vue"
+    ).read_text(encoding="utf-8")
+
+    assert "data-paragraph-index" in view, "定位需按锚点查 DOM"
+    assert "window.scrollTo" in view, "两栏原文共同参与同一页滚动"
+    assert "max-height: 58vh" not in view and "paper-scroll" not in view, "取消内滚容器，避免内容显示不全"
+    assert "externalScroll" in paper, "外部统一滚动时组件不得抢占滚动"

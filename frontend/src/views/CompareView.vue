@@ -15,6 +15,7 @@ const beforeId = ref("");
 const afterId = ref("");
 const result = ref<CompareResponse | null>(null);
 const error = ref("");
+const locatingHint = ref("");
 const loading = ref(false);
 const loadingStage = ref("");
 const useLlm = ref(false);
@@ -23,6 +24,8 @@ const activeId = ref<string | null>(null);
 const beforeParagraphs = ref<Array<{ index: number; text: string }>>([]);
 const afterParagraphs = ref<Array<{ index: number; text: string }>>([]);
 const revisedReport = ref<ReviewReport | null>(null);
+const beforeWorkbench = ref<HTMLElement | null>(null);
+const afterWorkbench = ref<HTMLElement | null>(null);
 
 function label(report: ReportSummary): string {
   const counts = report.counts ?? {};
@@ -141,6 +144,22 @@ async function locate(side: "before" | "after", finding: CompareFinding) {
   activeSide.value = side;
   activeId.value = finding.checklist_item_id;
   await nextTick();
+  // 两栏原文都在页面上直接展开，定位即「把目标段落滚到视口中间」。
+  const anchor = finding.anchors[0]?.paragraph_index ?? null;
+  const scope = side === "before" ? beforeWorkbench.value : afterWorkbench.value;
+  if (!scope) return;
+  if (anchor === null) {
+    locatingHint.value = "该条问题未给出原文段落锚点，无法自动定位。";
+    return;
+  }
+  const node = scope.querySelector<HTMLElement>(`[data-paragraph-index="${anchor}"]`);
+  if (!node) {
+    locatingHint.value = `修改稿的段落 ${anchor} 暂不可见（可能已随会话过期被清除）。`;
+    return;
+  }
+  locatingHint.value = "";
+  const offset = node.getBoundingClientRect().top - scope.getBoundingClientRect().top;
+  window.scrollTo({ top: window.scrollY + offset - 120, behavior: "smooth" });
 }
 
 function activeAnchor(findings: CompareFinding[]): number | null {
@@ -211,6 +230,7 @@ function statusLabel(status?: string): string {
       文字模板无法代改，已如实保留在右侧清单中。
     </p>
     <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="locatingHint" class="hint">{{ locatingHint }}</p>
 
     <div v-if="result" class="cmp-grid">
       <div class="card cmp-col">
@@ -222,34 +242,28 @@ function statusLabel(status?: string): string {
             <span class="chip low">轻微 {{ result.before.low ?? 0 }}</span>
           </span>
         </div>
-        <div class="mini-grid">
-          <div class="mini-list">
-            <div class="cmp-list-head">
-              <b>问题清单</b>
-              <span class="tiny">{{ beforeFindings.length }} 项 · 点击定位原文</span>
-            </div>
-            <div class="mini-items">
-              <button
-                v-for="finding in beforeFindings"
-                :key="finding.checklist_item_id"
-                class="cmp-f"
-                :class="{ active: activeSide === 'before' && activeId === finding.checklist_item_id }"
-                @click="locate('before', finding)"
-              >
-                <SeverityChip :severity="finding.severity" />
-                <span class="cmp-f-title">{{ finding.headline }}</span>
-                <span class="tiny">段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }}</span>
-              </button>
-              <p v-if="!beforeFindings.length" class="tiny empty">该稿件无待改问题。</p>
-            </div>
+        <div class="cmp-list">
+          <div v-for="finding in beforeFindings" :key="finding.checklist_item_id" class="cmp-row">
+            <button
+              class="cmp-f"
+              :class="{ active: activeSide === 'before' && activeId === finding.checklist_item_id }"
+              @click="locate('before', finding)"
+            >
+              <SeverityChip :severity="finding.severity" />
+              <span class="cmp-f-title">{{ finding.headline }}</span>
+              <span class="tiny">段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }} · 点击定位原文</span>
+            </button>
           </div>
-          <div class="paper-scroll">
-            <PaperPreview
-              :paragraphs="beforeParagraphs"
-              :tables="[]"
-              :highlight-index="activeSide === 'before' ? activeAnchor(beforeFindings) : null"
-            />
-          </div>
+          <p v-if="!beforeFindings.length" class="tiny empty">该稿件无待改问题。</p>
+        </div>
+        <div ref="beforeWorkbench" class="workbench">
+          <PaperPreview
+            :paragraphs="beforeParagraphs"
+            :tables="[]"
+            :highlight-index="activeSide === 'before' ? activeAnchor(beforeFindings) : null"
+            :external-scroll="true"
+            min-height="52vh"
+          />
         </div>
       </div>
 
@@ -262,35 +276,31 @@ function statusLabel(status?: string): string {
             <span class="chip low">轻微 {{ result.after.low ?? 0 }}</span>
           </span>
         </div>
-        <div class="mini-grid">
-          <div class="mini-list">
-            <div class="cmp-list-head">
-              <b>问题清单</b>
-              <span class="tiny">{{ afterFindings.length }} 项 · 点击定位原文</span>
-            </div>
-            <div class="mini-items">
-              <button
-                v-for="finding in afterFindings"
-                :key="finding.checklist_item_id"
-                class="cmp-f"
-                :class="{ active: activeSide === 'after' && activeId === finding.checklist_item_id }"
-                @click="locate('after', finding)"
-              >
+        <div class="cmp-list">
+          <div v-for="finding in afterFindings" :key="finding.checklist_item_id" class="cmp-row">
+            <button
+              class="cmp-f"
+              :class="{ active: activeSide === 'after' && activeId === finding.checklist_item_id }"
+              @click="locate('after', finding)"
+            >
+              <span class="cmp-f-head">
                 <SeverityChip :severity="finding.severity" />
-                <span class="cmp-f-title">{{ finding.headline }}</span>
-                <span class="tiny">段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }}</span>
                 <span class="status" :class="finding.revision_status">{{ statusLabel(finding.revision_status) }}</span>
-              </button>
-              <p v-if="!afterFindings.length" class="tiny empty">二次审查未再发现问题。</p>
-            </div>
+              </span>
+              <span class="cmp-f-title">{{ finding.headline }}</span>
+              <span class="tiny">段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }} · 点击定位原文</span>
+            </button>
           </div>
-          <div class="paper-scroll">
-            <PaperPreview
-              :paragraphs="afterParagraphs"
-              :tables="[]"
-              :highlight-index="activeSide === 'after' ? activeAnchor(afterFindings) : null"
-            />
-          </div>
+          <p v-if="!afterFindings.length" class="tiny empty">二次审查未再发现问题。</p>
+        </div>
+        <div ref="afterWorkbench" class="workbench">
+          <PaperPreview
+            :paragraphs="afterParagraphs"
+            :tables="[]"
+            :highlight-index="activeSide === 'after' ? activeAnchor(afterFindings) : null"
+            :external-scroll="true"
+            min-height="52vh"
+          />
         </div>
       </div>
     </div>
@@ -329,23 +339,24 @@ function statusLabel(status?: string): string {
 .cmp-col .head { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .cmp-col .head .lbl { font-size: 13.5px; font-weight: 600; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.mini-grid { display: grid; grid-template-columns: 230px 1fr; flex: 1; min-height: 0; }
-.mini-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-.cmp-list-head { padding: 9px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; }
-.mini-items { flex: 1; overflow: auto; }
-.cmp-f { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 9px 12px; border: none; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; font: inherit; font-size: 12.5px; }
+.cmp-list { display: flex; flex-direction: column; max-height: 260px; overflow: auto; border-bottom: 1px solid var(--line); }
+.cmp-row { border-bottom: 1px solid var(--line); }
+.cmp-f { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; padding: 10px 14px; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 12.5px; }
 .cmp-f:hover { background: var(--bg); }
 .cmp-f.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-.cmp-f-title { flex: 1 1 100%; font-weight: 500; }
+.cmp-f-head { display: flex; align-items: center; gap: 6px; }
+.cmp-f-title { font-weight: 600; font-size: 13px; }
 .status { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--bg); color: var(--ink-3); }
 .status.rewritten { background: var(--pass-bg); color: var(--pass); }
 .status.manual { background: var(--sev-mid-bg); color: var(--sev-mid); }
-.paper-scroll { min-height: 0; overflow: hidden; }
-.paper-scroll :deep(.paper) { max-height: 58vh; border: none; box-shadow: none; border-radius: 0; }
+.workbench { padding: 10px 12px 14px; }
+.workbench :deep(.paper) { border: none; box-shadow: none; border-radius: 0; max-height: none; padding: 18px 22px; }
+.workbench :deep(.hl) { scroll-margin-top: 90px; }
 .tiny { color: var(--ink-3); font-size: 12px; }
 .empty { padding: 12px; }
 .empty-state { margin-top: 12px; }
 .error { color: var(--sev-high); }
+.hint { color: var(--sev-mid); font-size: 12.5px; margin: 0 0 12px; }
 @media (max-width: 1100px) {
   .cmp-grid { grid-template-columns: 1fr; }
   .selectors { grid-template-columns: 1fr; }
