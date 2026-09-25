@@ -123,9 +123,46 @@ class Store:
             raise AppError("not_found", f"{kind} 不存在或无权访问。", 404)
         return json.loads(row[column])
 
+    # ---- 追问历史 ----
+    def append_chat_message(self, session_id: str, report_id: str, role: str, content: str, keep: int) -> None:
+        """追加一条追问消息，并把该（会话, 报告）下超出 `keep` 条的最早消息删除。
+
+        `keep` 由 `CHAT_HISTORY_MAX_TURNS` 推导（每轮 user + assistant 两条），
+        使落库量随上下文上限一起受约束，避免历史无界增长。
+        """
+        connection = connect(self.db_path)
+        try:
+            connection.execute(
+                "INSERT INTO chat_messages (id, session_id, report_id, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (new_id("msg"), session_id, report_id, role, content, _now().isoformat()),
+            )
+            connection.execute(
+                "DELETE FROM chat_messages WHERE session_id = ? AND report_id = ? AND id NOT IN ("
+                "SELECT id FROM chat_messages WHERE session_id = ? AND report_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?"
+                ")",
+                (session_id, report_id, session_id, report_id, keep),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def list_chat_messages(self, session_id: str, report_id: str) -> list[dict]:
+        """按写入顺序返回该（会话, 报告）下的追问消息，供构造多轮上下文。"""
+        connection = connect(self.db_path)
+        try:
+            rows = connection.execute(
+                "SELECT role, content FROM chat_messages WHERE session_id = ? AND report_id = ? "
+                "ORDER BY created_at ASC, rowid ASC",
+                (session_id, report_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [{"role": row["role"], "content": row["content"]} for row in rows]
+
     def purge_session(self, session_id: str) -> None:
         connection = connect(self.db_path)
         try:
+            connection.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM reports WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM jobs WHERE session_id = ?", (session_id,))

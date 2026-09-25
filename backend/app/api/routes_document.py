@@ -16,6 +16,7 @@ def get_document(document_id: str, request: Request, response: Response) -> dict
         "source_name": document.get("source_name"),
         "sections": document.get("sections", []),
         "paragraphs": document.get("paragraphs", []),
+        "tables": document.get("tables", []),
         "warnings": document.get("warnings", []),
         "parser": document.get("parser"),
     }

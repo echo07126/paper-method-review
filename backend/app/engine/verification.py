@@ -47,6 +47,16 @@ def _normalize(text: str) -> str:
     return re.sub(r"[\s，。；：、（）()\[\]“‘”’\"'`.,;:!?！？]", "", text).lower()
 
 
+def _table_row_texts(document: DocumentIR) -> list[str]:
+    """表体各行文本（P2-2 后表格已移出 paragraphs[]，需单独纳入检索范围）。"""
+    return [
+        " | ".join(cell for cell in row if cell)
+        for table in document.tables
+        for row in table.rows
+        if any(cell for cell in row)
+    ]
+
+
 def _paragraph_index_of(document: DocumentIR, quote: str) -> int | None:
     target = _normalize(quote)
     if len(target) < 12:
@@ -54,6 +64,11 @@ def _paragraph_index_of(document: DocumentIR, quote: str) -> int | None:
     for paragraph in document.paragraphs:
         if target in _normalize(paragraph.text):
             return paragraph.index
+    for table in document.tables:
+        for row in table.rows:
+            row_text = " | ".join(cell for cell in row if cell)
+            if row_text and target in _normalize(row_text):
+                return table.anchor.paragraph_index
     return None
 
 
@@ -73,7 +88,8 @@ def verify_findings(document: DocumentIR, findings: list[Finding], provider: LLM
         f'{index}. [{finding.checklist_item_id}] {finding.headline}：{finding.description[:120]}'
         for index, finding in enumerate(pending)
     )
-    document_text = "\n".join(paragraph.text for paragraph in document.paragraphs)[:12000]
+    body = [paragraph.text for paragraph in document.paragraphs] + _table_row_texts(document)
+    document_text = "\n".join(body)[:12000]
     messages = [
         {"role": "system", "content": SYSTEM_GUARD + "\n" + VERIFY_INSTRUCTION},
         {

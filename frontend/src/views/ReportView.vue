@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import client from "@/api/client";
-import type { ChatResponse, DocumentResponse, Finding, ReviewReport } from "@/api/types";
+import type { DocumentResponse, Finding, ReviewReport, Table } from "@/api/types";
 import ChatDrawer from "@/components/ChatDrawer.vue";
 import FindingList from "@/components/FindingList.vue";
 import PaperPreview from "@/components/PaperPreview.vue";
@@ -13,9 +13,9 @@ const route = useRoute();
 const store = useSessionStore();
 const report = ref<ReviewReport | null>(null);
 const paragraphs = ref<Array<{ index: number; text: string }>>([]);
+const tables = ref<Table[]>([]);
 const activeFinding = ref<Finding | null>(null);
 const drawerOpen = ref(false);
-const answer = ref("");
 const filter = ref<"all" | "problem" | "uncertain" | "pass">("all");
 
 const visibleFindings = computed(() => {
@@ -44,26 +44,20 @@ onMounted(async () => {
     try {
       const { data } = await client.get<DocumentResponse>(`/documents/${store.documentId}`);
       paragraphs.value = data.paragraphs.filter((paragraph) => paragraph.text.trim());
+      tables.value = data.tables ?? [];
     } catch {
       // 原文不可见时仍可查看报告结论，不阻断主流程
     }
   }
 });
 
-async function askFinding(finding: Finding) {
+function askFinding(finding: Finding) {
   activeFinding.value = finding;
   drawerOpen.value = true;
-  answer.value = "正在获取解答…";
-  const reportId = report.value?.report_id ?? store.reportId;
-  try {
-    const { data } = await client.post<ChatResponse>(`/reports/${reportId}/chat`, {
-      question: "这条问题该怎么改？",
-      finding_id: finding.finding_id,
-    });
-    answer.value = data.answer;
-  } catch (err) {
-    answer.value = (err as Error).message;
-  }
+}
+
+function openFreeChat() {
+  drawerOpen.value = true;
 }
 </script>
 
@@ -82,8 +76,8 @@ async function askFinding(finding: Finding) {
       ℹ 识别为综述/理论论文（非实证）：已跳过数据划分、基线、消融、统计检验、可复现性等实证类检查。
     </p>
     <p v-if="report.figure_references" class="figure-note">
-      ⚠ 检测到 {{ report.figure_references }} 处图表引用（图/表）：图表内部数据未解析；
-      {{ report.demote_on_figures ? "本次已启用保守模式，可能依赖图表的条目已列为「存疑」。" : "如统计量仅标在图内，相关条目可能漏报或误报。" }}
+      ⚠ 检测到 {{ report.figure_references }} 处图表引用（图/表）：表格内容已结构化解析并纳入审查，图像内部数据未参与规则判定；
+      {{ report.demote_on_figures ? "本次已启用保守模式，可能依赖图像证据的条目已列为「存疑」。" : "如统计量仅标在图像内，相关条目可能漏报或误报。" }}
     </p>
     <div class="filters">
       <button :class="{ on: filter === 'all' }" @click="filter = 'all'">全部（{{ report.findings.length }}）</button>
@@ -95,20 +89,25 @@ async function askFinding(finding: Finding) {
       <FindingList
         :findings="visibleFindings"
         :active-id="activeFinding?.finding_id"
-        @select="activeFinding = $event; answer = ''"
+        @select="activeFinding = $event"
       />
-      <PaperPreview :paragraphs="paragraphs" :highlight-index="activeFinding?.anchors[0]?.paragraph_index ?? null" />
+      <PaperPreview
+        :paragraphs="paragraphs"
+        :tables="tables"
+        :highlight-index="activeFinding?.anchors[0]?.paragraph_index ?? null"
+      />
     </div>
     <button class="ask" :disabled="!activeFinding" @click="activeFinding && askFinding(activeFinding)">
       追问这条
     </button>
+    <button class="ask" @click="openFreeChat">自由提问</button>
   </div>
   <p v-else-if="loadError" class="empty error">{{ loadError }}</p>
   <p v-else class="empty">暂无报告：请先在上传页完成解析与审查。</p>
   <ChatDrawer
     :open="drawerOpen"
-    :question="activeFinding ? activeFinding.headline : ''"
-    :answer="answer"
+    :report-id="report?.report_id ?? store.reportId"
+    :finding="activeFinding"
     @close="drawerOpen = false"
   />
 </template>

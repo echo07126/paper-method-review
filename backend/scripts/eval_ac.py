@@ -33,6 +33,7 @@ def main() -> int:
 
     items = load_checklist(ROOT / "checklists" / "quant-ai-v1.json")
     provider = build_provider(get_settings()) if args.llm else None
+    checklist_item_ids = {item.id for item in items}
 
     rows = []
     groups = {
@@ -49,7 +50,8 @@ def main() -> int:
         report = review_document(document, items, provider=provider, use_llm=args.llm)
 
         problems = {f.checklist_item_id: f for f in report.findings if f.verdict.value == "problem"}
-        detected = set(problems)
+        # 清单外附加检查（如 R-FIG-01 图表一致性）不计入 AC-2/AC-3 的分母与误报口径
+        detected = {item_id for item_id in problems if item_id in checklist_item_ids}
         expected_items = {item["checklist_item_id"]: item for item in truth["items"]}
         expected = set(expected_items)
         hit = expected & detected

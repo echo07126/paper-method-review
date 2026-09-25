@@ -126,6 +126,12 @@ def extract_elements(document: DocumentIR) -> list[Element]:
                 elements.extend(_match_sentence(paragraph.index, sentence.index, sentence.text))
         else:
             elements.extend(_match_sentence(paragraph.index, None, paragraph.text))
+    for table in document.tables:
+        anchor_index = table.anchor.paragraph_index
+        for row in table.rows:
+            row_text = " | ".join(cell for cell in row if cell)
+            if row_text.strip():
+                elements.extend(_match_sentence(anchor_index, None, row_text))
     return elements
 
 

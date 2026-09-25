@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -8,12 +9,14 @@ from app.core.ids import new_id
 from app.core.config import get_settings
 from app.core.logging import safe_logger
 from app.engine.elements import extract_elements
+from app.engine.figure_consistency import check_figure_consistency
 from app.engine.figures import demote_for_figures, find_figure_references
 from app.engine.llm_provider import LLMProvider, LLMUnavailable
 from app.engine.paper_type import REVIEW_ALLOWED_ITEMS, classify
 from app.engine.prompts import build_review_prompt
 from app.engine.rules import run_rules
 from app.engine.verification import verify_findings
+from app.engine.vision import read_figure_values
 from app.models.schemas import (
     DocumentIR,
     Element,
@@ -216,8 +219,10 @@ def review_document(
     provider: LLMProvider | None = None,
     use_llm: bool = False,
     demote_on_figures: bool | None = None,
+    media_root: str | Path | None = None,
 ) -> ReviewReport:
     started = time.monotonic()
+    settings = get_settings()
     paper_type, type_evidence = classify(document)
     items_for_review = (
         [item for item in items if item.id in REVIEW_ALLOWED_ITEMS] if paper_type == "review" else items
@@ -252,18 +257,45 @@ def review_document(
     if provider is not None and use_llm:
         merged = verify_findings(document, merged, provider)
     findings = _attach_evidence(merged, items_for_review, elements, _rule_anchors(rule_findings))
-    findings = _apply_advisory_mode(findings, get_settings().llm_advisory_only)
+    findings = _apply_advisory_mode(findings, settings.llm_advisory_only)
+    findings.extend(check_figure_consistency(document))
 
+    vision_read = False
+    if use_llm and provider is not None and settings.llm_vision_enabled and document.images:
+        vision_findings, vision_tokens = read_figure_values(
+            document, provider, media_root, max_images=settings.llm_vision_max_images
+        )
+        findings.extend(vision_findings)
+        vision_read = bool(vision_findings)
+        tokens["input"] += vision_tokens.get("input", 0)
+        tokens["output"] += vision_tokens.get("output", 0)
+        if vision_findings:
+            notes.append(
+                f"已识读 {len(vision_findings)} 张插图并回填图内数值线索（列为「存疑」，需人工复核）。"
+            )
+
+    # 图像侧口径：规则判定不消费图内数据；若视觉识读已产出线索则据此表述，避免说法与实现不符
+    image_note = (
+        "图内数值已由视觉识读产出「存疑」线索，规则判定仍不消费图内数据"
+        if vision_read
+        else "图像内部数据未参与规则判定"
+    )
     figure_references = find_figure_references(document)
-    demote = get_settings().demote_on_figures if demote_on_figures is None else demote_on_figures
+    demote = settings.demote_on_figures if demote_on_figures is None else demote_on_figures
     if figure_references:
         suffix = "（已启用保守模式：可能依赖图表的条目降级为存疑）" if demote else ""
-        notes.append(
-            f"检测到 {len(figure_references)} 处图表引用（图/表）：图表内部数据未解析，"
-            f"若统计量仅出现在图表中，相关条目可能漏报或误报。{suffix}"
-        )
+        if document.tables:
+            notes.append(
+                f"检测到 {len(figure_references)} 处图表引用（图/表）：其中 {len(document.tables)} 个表格已完成结构化解析，"
+                f"表内要素已纳入审查；{image_note}，若统计量仅出现在图像中，相关条目可能漏报或误报。{suffix}"
+            )
+        else:
+            notes.append(
+                f"检测到 {len(figure_references)} 处图表引用（图/表）：{image_note}，"
+                f"若统计量仅出现在图表中，相关条目可能漏报或误报。{suffix}"
+            )
         if demote:
-            findings = demote_for_figures(findings)
+            findings = demote_for_figures(findings, document=document, elements=elements)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     report = ReviewReport(

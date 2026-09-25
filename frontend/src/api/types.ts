@@ -75,13 +75,30 @@ export interface ReportSummary {
   created_at: string;
 }
 
+export interface Table {
+  id: string;
+  index: number;
+  caption: string;
+  rows: Array<Array<string | null>>;
+  header_rows: number;
+  n_rows: number;
+  n_cols: number;
+  anchor: Anchor;
+}
+
 export interface DocumentResponse {
   document_id: string;
   source_name: string | null;
   sections: Section[];
   paragraphs: Array<{ index: number; text: string }>;
+  tables: Table[];
   warnings: string[];
   parser: string | null;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
 export interface ChatResponse {
@@ -89,4 +106,7 @@ export interface ChatResponse {
   source: "llm" | "fallback";
   tokens?: Record<string, number> | null;
   note?: string | null;
+  session_id: string;
+  history: ChatMessage[];
+  truncated: boolean;
 }

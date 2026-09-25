@@ -32,7 +32,12 @@ def create_review(payload: ReviewRequest, request: Request, response: Response) 
     use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
     provider = build_provider(settings) if use_llm else None
     report = review_document(
-        document, items, provider=provider, use_llm=use_llm, demote_on_figures=payload.demote_on_figures
+        document,
+        items,
+        provider=provider,
+        use_llm=use_llm,
+        demote_on_figures=payload.demote_on_figures,
+        media_root=Path(settings.temp_dir) / session_id,
     )
     store.save_report(session_id, payload.document_id, report.report_id, report.model_dump_json())
 

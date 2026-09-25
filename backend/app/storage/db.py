@@ -33,6 +33,19 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     );
     """,
+    # v2：追问多轮上下文（需求 15.5.4）。落库量由 append 时的轮数上限约束，
+    # 删除链路必须覆盖本表（purge_session / cleanup_expired）。
+    """
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        report_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_session_report ON chat_messages (session_id, report_id, created_at);
+    """,
 ]
 
 

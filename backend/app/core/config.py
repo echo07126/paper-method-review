@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     rate_limit_reviews_per_minute: int = 10
     rate_limit_reads_per_minute: int = 120
     llm_verify_max_items: int = 6
+    # L3 图像内容识读（P2-3）：按图片计费，需显式开启并限制张数
+    llm_vision_enabled: bool = True
+    llm_vision_max_images: int = 4
+    # 追问多轮上下文上限（需求 15.5.4）：10 轮 / 20 条消息 + 历史总字符 8000（含 system）
+    chat_history_max_turns: int = 10
+    chat_history_max_chars: int = 8000
 
     max_upload_mb: int = 50
     max_pages: int = 60

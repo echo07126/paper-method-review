@@ -9,12 +9,12 @@ OUTPUT = ROOT / "docs" / "engineering" / "API接口说明.md"
 PURPOSE = {
     "/api/v1/health": "健康检查（存活与配置状态）",
     "/api/v1/uploads": "上传 DOCX 并解析",
-    "/api/v1/documents/{document_id}": "读取解析结果（章节/段落，供报告页原文预览）",
+    "/api/v1/documents/{document_id}": "读取解析结果（章节/段落/表格，供报告页原文预览）",
     "/api/v1/reviews": "执行结构化审查（可选 use_llm / demote_on_figures）",
     "/api/v1/reports": "列出当前会话的报告（供修改对比选择）",
     "/api/v1/reports/{report_id}": "读取单份报告全文（findings 含锚点）",
     "/api/v1/reports/{report_id}/export": "导出报告（format=markdown）",
-    "/api/v1/reports/{report_id}/chat": "针对单条问题追问（有 Key 走模型，无 Key 模板降级）",
+    "/api/v1/reports/{report_id}/chat": "针对报告追问（多轮上下文；有 Key 走模型，无 Key 模板降级）",
     "/api/v1/compare": "修改前后对比（两份 report_id）",
     "/api/v1/sessions/purge": "删除当前会话数据（数据库 + 临时文件）",
 }
@@ -23,12 +23,12 @@ PURPOSE = {
 RESPONSE_FIELDS = {
     "/api/v1/health": "status, app_env, docs_enabled",
     "/api/v1/uploads": "document_id, parser, sections[], paragraph_count, citation_count, reference_count, warnings[]",
-    "/api/v1/documents/{document_id}": "document_id, source_name, sections[], paragraphs[], warnings[], parser",
+    "/api/v1/documents/{document_id}": "document_id, source_name, sections[], paragraphs[], tables[], warnings[], parser",
     "/api/v1/reviews": "report_id, counts{}, duration_ms, tokens{}, notes[], figure_references, demote_on_figures",
     "/api/v1/reports": "[{report_id, document_id, document_name, counts{}, created_at}]",
     "/api/v1/reports/{report_id}": "report_id, document_name, checklist_version, findings[], counts{}, duration_ms, tokens{}, notes[], figure_references, demote_on_figures",
     "/api/v1/reports/{report_id}/export": "Markdown 文本（PlainTextResponse）",
-    "/api/v1/reports/{report_id}/chat": "answer, source(llm|fallback), tokens?(llm), note?(fallback)",
+    "/api/v1/reports/{report_id}/chat": "answer, source(llm|fallback), tokens?(llm), note?(fallback), session_id, history[], truncated",
     "/api/v1/compare": "before{}, after{}, resolved[], new[], kept[]",
     "/api/v1/sessions/purge": "status",
 }
@@ -93,6 +93,7 @@ def main() -> int:
         "- 统一前缀 `/api/v1`；会话通过 HttpOnly Cookie（`pm_session`）维护，免登录。",
         "- 错误响应统一为 `{code, message, request_id}`；跨会话访问他人资源返回 404。",
         "- 审查参数：`use_llm`（是否启用模型顾问，**不传则用服务端默认 `LLM_DEFAULT_ENABLED=true`，即默认启用**）、`demote_on_figures`（图表未解析时是否保守降级，不传则用服务端默认）。",
+        "- 追问上下文：`history` 为客户端可选的 `[{role, content}]`（服务端仅在落库历史为空时采用）；上限 `CHAT_HISTORY_MAX_TURNS=10`（即 20 条消息）与 `CHAT_HISTORY_MAX_CHARS=8000`（含 system），超出时**整轮截断**并置 `truncated=true`。",
         "",
         "## 4. 已知缺口",
         "- 已解决：全部接口声明 `response_model`，OpenAPI 含响应结构；`tests/test_api_contract.py` 做前后端字段契约校验。",
