@@ -55,3 +55,8 @@ def load_checklist_dir(directory: Path) -> dict[str, list[ReviewItem]]:
 
 def filter_by_template(items: list[ReviewItem], template: str) -> list[ReviewItem]:
     return [item for item in items if not item.templates or template in item.templates]
+
+
+def revision_template_index(items: list[ReviewItem]) -> dict[str, str]:
+    """条目 ID -> 「修改后」示范句式。供报告页「修改后展示」直接渲染（可选展示）。"""
+    return {item.id: item.revision_template for item in items if item.revision_template}

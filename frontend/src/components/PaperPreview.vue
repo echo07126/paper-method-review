@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 import type { Table } from "@/api/types";
 
@@ -34,17 +34,45 @@ const blocks = computed<Block[]>(() => {
   }
   return result;
 });
+
+const paper = ref<HTMLElement | null>(null);
+
+// 点击左侧问题 → 右侧滚动到对应段落（段落由后端锚点 paragraph_index 定位）
+async function scrollToHighlight(index: number | null | undefined) {
+  await nextTick();
+  const host = paper.value;
+  if (!host || index === null || index === undefined) return;
+  const target =
+    host.querySelector<HTMLElement>(`[data-paragraph-index="${index}"]`) ??
+    host.querySelector<HTMLElement>(".hl");
+  if (!target) return;
+  const top = target.offsetTop - host.clientHeight / 2 + target.clientHeight / 2;
+  host.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
+}
+
+watch(
+  () => props.highlightIndex,
+  (index) => {
+    void scrollToHighlight(index);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
-  <div class="card paper">
+  <div ref="paper" class="card paper">
     <template v-for="(block, position) in blocks" :key="position">
-      <p v-if="block.kind === 'para'" :class="{ hl: block.index === highlightIndex }">
+      <p
+        v-if="block.kind === 'para'"
+        :data-paragraph-index="block.index"
+        :class="{ hl: block.index === highlightIndex }"
+      >
         {{ block.text }}
       </p>
       <figure
         v-else
         class="table-block"
+        :data-paragraph-index="block.table.anchor.paragraph_index"
         :class="{ hl: block.table.anchor.paragraph_index === highlightIndex }"
       >
         <figcaption v-if="block.table.caption">{{ block.table.caption }}</figcaption>
@@ -67,7 +95,7 @@ const blocks = computed<Block[]>(() => {
 </template>
 
 <style scoped>
-.paper { max-height: 70vh; overflow: auto; }
+.paper { max-height: 70vh; overflow: auto; scroll-behavior: smooth; }
 .paper p { margin: 8px 0; text-align: justify; }
 .hl { background: #ffe58f; border-radius: 3px; }
 .table-block { margin: 12px 0; }

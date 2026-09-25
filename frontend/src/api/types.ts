@@ -23,6 +23,8 @@ export interface Finding {
   suggestion?: string;
   anchors: Anchor[];
   evidence_elements?: string[];
+  /** 「修改后展示」（可选）：把建议落实为可直接对照的改写示例 */
+  suggested_revision?: string;
   provenance?: Record<string, unknown>;
 }
 
@@ -109,4 +111,6 @@ export interface ChatResponse {
   session_id: string;
   history: ChatMessage[];
   truncated: boolean;
+  /** finding = 针对某条审查问题；fulltext = 基于全文的自由提问 */
+  scope: "finding" | "fulltext";
 }

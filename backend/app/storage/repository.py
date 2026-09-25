@@ -85,6 +85,23 @@ class Store:
     def authorized_report(self, session_id: str, report_id: str) -> dict:
         return self._authorized("reports", "report_json", session_id, report_id, kind="report")
 
+    def report_document_id(self, session_id: str, report_id: str) -> str:
+        """取报告对应的 document_id（自由提问需要据此注入全文）。
+
+        越权与不存在统一返回 404，避免泄露资源存在性。
+        """
+        connection = connect(self.db_path)
+        try:
+            row = connection.execute(
+                "SELECT document_id FROM reports WHERE id = ? AND session_id = ?",
+                (report_id, session_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if not row:
+            raise AppError("not_found", "report 不存在或无权访问。", 404)
+        return str(row["document_id"])
+
     def list_reports(self, session_id: str) -> list[dict]:
         connection = connect(self.db_path)
         try:
