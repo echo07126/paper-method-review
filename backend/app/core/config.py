@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # 追问多轮上下文上限（需求 15.5.4）：10 轮 / 20 条消息 + 历史总字符 8000（含 system）
     chat_history_max_turns: int = 10
     chat_history_max_chars: int = 8000
+    # 自由提问（全文问答）注入的全文预算（字符）。超出时按整段裁剪，与追问共用同一轮数/字符上限。
+    qa_fulltext_max_chars: int = 12000
 
     max_upload_mb: int = 50
     max_pages: int = 60

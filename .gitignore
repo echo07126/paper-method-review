@@ -25,6 +25,7 @@ samples/real/*_media/
 # 运行时数据（论文/报告/临时文件不得入库）
 data/
 logs/
+*.log
 *.db
 *.sqlite3
 

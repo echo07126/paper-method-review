@@ -115,6 +115,8 @@ class ReviewItem(BaseModel):
     title: str
     description: str = ""
     suggestion_template: str = ""
+    # 「修改后」示范句式：供报告页「修改后展示」直接渲染（可选、与判定解耦）
+    revision_template: str = ""
     evidence_policy: str = "requires_element"
     source_refs: list[str] = Field(default_factory=list)
 
@@ -137,6 +139,8 @@ class Finding(BaseModel):
     evidence_elements: list[str] = Field(default_factory=list)
     anchors: list[Anchor] = Field(default_factory=list)
     suggestion: str = ""
+    # 「修改后展示」：把建议落实为可直接对照的改写示例（可选展示，不参与问题判定）
+    suggested_revision: str = ""
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -226,6 +230,8 @@ class ChatResponse(BaseModel):
     session_id: str = ""
     history: list[ChatMessage] = Field(default_factory=list)
     truncated: bool = False
+    # 提问作用域：finding = 针对某条审查问题；fulltext = 基于全文的自由提问
+    scope: Literal["finding", "fulltext"] = "finding"
 
 
 class PurgeResponse(BaseModel):

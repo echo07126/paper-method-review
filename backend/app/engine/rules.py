@@ -41,10 +41,21 @@ def _anchor_of(element: Element) -> Anchor:
     return element.anchors[0] if element.anchors else Anchor(paragraph_index=0)
 
 
+# 条目 ID -> 「修改后」示范句式：由 reviewer 用清单的 revision_template 预置，
+# 供报告页「修改后展示」（可选）直接渲染，不参与任何判定。
+_REVISION_TEMPLATES: dict[str, str] = {}
+
+
+def set_revision_templates(mapping: dict[str, str]) -> None:
+    _REVISION_TEMPLATES.clear()
+    _REVISION_TEMPLATES.update(mapping)
+
+
 def _make(item_id, verdict, severity, headline, description, suggestion, anchors, rule_id) -> Finding:
     return Finding(
         finding_id=new_id("F"), checklist_item_id=item_id, verdict=verdict, severity=severity,
         headline=headline, description=description, anchors=anchors, suggestion=suggestion,
+        suggested_revision=_REVISION_TEMPLATES.get(item_id, ""),
         provenance={"engine": "rule", "rule_id": rule_id},
     )
 
