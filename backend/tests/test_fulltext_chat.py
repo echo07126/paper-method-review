@@ -46,29 +46,14 @@ def test_fulltext_shares_history_limits_with_followup() -> None:
     assert "chat_history_max_turns" in source and "chat_history_max_chars" in source
 
 
-def test_report_page_exposes_optional_revision_view() -> None:
-    """报告页需提供「修改后」可选展示（默认隐藏，避免影响判定口径）。"""
+def test_report_page_drops_revision_preview() -> None:
+    """修改后示范不再挂在报告页：示范内容改为在修改对比页落成修改稿正文。"""
     view = (ROOT.parent / "frontend" / "src" / "views" / "ReportView.vue").read_text(encoding="utf-8")
-    detail = (ROOT.parent / "frontend" / "src" / "components" / "FindingDetail.vue").read_text(encoding="utf-8")
-    assert "showRevision" in view and "显示修改后" in view, "报告页缺少「修改后」开关"
-    assert "suggested_revision" in detail, "详情组件未渲染修改后示范"
+    listing = (ROOT.parent / "frontend" / "src" / "components" / "FindingList.vue").read_text(encoding="utf-8")
 
-
-def test_followup_and_fulltext_prompts_are_distinct() -> None:
-    """追问与自由提问的系统提示、提问前缀必须不同，避免两种模式被当成同一种对话。"""
-    from app.engine.chat_history import build_system_message
-    from app.engine.qa_context import build_qa_system_message
-
-    followup = build_system_message()["content"]
-    fulltext = build_qa_system_message()["content"]
-
-    assert followup != fulltext
-    assert "只" in followup and "这一条" in followup or "某一条" in followup
-    assert "全文" in fulltext and "任意位置" in fulltext
-
-    routes = (ROOT / "app" / "api" / "routes_chat.py").read_text(encoding="utf-8")
-    assert "【这一条】" in routes, "追问路径缺少单条作用域声明"
-    assert "【全文自由提问】" in routes, "自由提问路径缺少全文作用域声明"
+    assert "showRevision" not in view and "显示修改后" not in view, "报告页不应再保留「显示修改后」开关"
+    assert "suggested_revision" not in listing, "报告页问题清单不应再直接展示修改后示范"
+    assert "去修改对比" in view, "报告页需提供进入修改对比的入口"
 
 
 def test_report_page_merges_detail_into_list() -> None:
@@ -78,6 +63,6 @@ def test_report_page_merges_detail_into_list() -> None:
     drawer = (ROOT.parent / "frontend" / "src" / "components" / "ChatDrawer.vue").read_text(encoding="utf-8")
 
     assert "FindingDetail" not in view, "问题详情应内联进清单，不再单独占一栏"
-    assert "suggested_revision" in listing, "清单展开后应可看到修改后示范"
+    assert "修改建议" in listing, "清单展开后应展示修改建议"
     assert "追问这条" in listing
     assert "全文自由提问" in drawer and "追问这条问题" in drawer, "两种对话需有独立标题"

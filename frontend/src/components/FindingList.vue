@@ -7,8 +7,6 @@ import SeverityChip from "@/components/SeverityChip.vue";
 const props = defineProps<{
   findings: Finding[];
   activeId?: string;
-  /** 「修改后展示」全局开关：与工具栏共用同一状态 */
-  showRevision?: boolean;
 }>();
 const emit = defineEmits<{
   (event: "select", finding: Finding): void;
@@ -84,11 +82,6 @@ watch(
             <p>{{ finding.suggestion || "（本条未给出具体建议）" }}</p>
           </div>
 
-          <div v-if="showRevision" class="f-block revision">
-            <span class="f-label">修改后（示范）</span>
-            <p>{{ finding.suggested_revision || "（本条暂无示范改写，可点击「追问这条」获取针对性表述）" }}</p>
-          </div>
-
           <div class="f-actions">
             <button type="button" @click.stop="emit('select', finding)">定位原文</button>
             <button type="button" class="ask" @click.stop="emit('ask', finding)">追问这条</button>
@@ -118,7 +111,6 @@ watch(
 .f-detail { padding: 0 16px 12px; }
 .f-desc { margin: 4px 0 8px; font-size: 13px; color: var(--ink-2); }
 .f-block { border-left: 3px solid var(--line); padding: 5px 10px; margin: 8px 0; font-size: 13px; }
-.f-block.revision { border-left-color: var(--accent); background: rgba(255, 255, 255, 0.7); border-radius: 0 8px 8px 0; }
 .f-block p { margin: 2px 0 0; white-space: pre-wrap; }
 .f-label { font-size: 11.5px; color: var(--ink-3); }
 .f-actions { display: flex; gap: 8px; margin-top: 10px; }

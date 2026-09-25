@@ -14,7 +14,7 @@ from app.engine.figures import demote_for_figures, find_figure_references
 from app.engine.llm_provider import LLMProvider, LLMUnavailable
 from app.engine.paper_type import REVIEW_ALLOWED_ITEMS, classify
 from app.engine.prompts import build_review_prompt
-from app.engine.rules import run_rules, set_revision_templates
+from app.engine.rules import run_rules
 from app.engine.verification import verify_findings
 from app.engine.vision import read_figure_values
 from app.models.schemas import (
@@ -132,7 +132,6 @@ def _merge_findings(rule_findings: list[Finding], llm_findings: list[Finding]) -
             update={
                 "description": base.description or finding.description,
                 "suggestion": base.suggestion or finding.suggestion,
-                "suggested_revision": base.suggested_revision,
                 "provenance": {
                     **base.provenance,
                     "merged_with_llm": True,
@@ -214,23 +213,6 @@ def _llm_findings(document: DocumentIR, items: list[ReviewItem], provider: LLMPr
     return findings, usage, invalid
 
 
-def _fallback_revisions(findings: list[Finding], items: list[ReviewItem]) -> list[Finding]:
-    """保证「修改后展示」（可选）对每条 problem 都有内容。
-
-    优先用清单的 revision_template；未配置该字段时回退到 suggestion_template，
-    仅作展示，不参与判定，因此不影响检出率 / 精确率 / 定位率口径。
-    """
-    templates = {item.id: (item.revision_template or item.suggestion_template) for item in items}
-    patched: list[Finding] = []
-    for finding in findings:
-        if finding.verdict == Verdict.PROBLEM and not finding.suggested_revision:
-            text = templates.get(finding.checklist_item_id, "")
-            if text:
-                finding = finding.model_copy(update={"suggested_revision": text})
-        patched.append(finding)
-    return patched
-
-
 def review_document(
     document: DocumentIR,
     items: list[ReviewItem],
@@ -252,9 +234,6 @@ def review_document(
             f"识别为综述/理论论文（非实证）：已跳过 {skipped} 条实证类检查（如数据划分/基线/消融/统计检验/可复现性）。"
         )
     elements = extract_elements(document)
-    # 「修改后展示」（可选）：把清单的 revision_template 预置给规则层，随 finding 输出。
-    # 仅作展示，不参与判定，也不影响检出/精确/定位口径。
-    set_revision_templates({item.id: item.revision_template for item in items if item.revision_template})
     rule_findings = run_rules(document, elements)
     if paper_type == "review":
         rule_findings = [f for f in rule_findings if f.checklist_item_id in REVIEW_ALLOWED_ITEMS]
@@ -279,7 +258,8 @@ def review_document(
         merged = verify_findings(document, merged, provider)
     findings = _attach_evidence(merged, items_for_review, elements, _rule_anchors(rule_findings))
     findings = _apply_advisory_mode(findings, settings.llm_advisory_only)
-    findings = _fallback_revisions(findings, items)
+    # 审查报告不再承载「修改后示范」：该字段已由 CompareFinding.revision_status 取代，
+    # 具体补写文本只在生成修改稿时使用（app/engine/revision.py）。
     findings.extend(check_figure_consistency(document))
 
     vision_read = False

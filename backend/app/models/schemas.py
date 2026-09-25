@@ -139,8 +139,6 @@ class Finding(BaseModel):
     evidence_elements: list[str] = Field(default_factory=list)
     anchors: list[Anchor] = Field(default_factory=list)
     suggestion: str = ""
-    # 「修改后展示」：把建议落实为可直接对照的改写示例（可选展示，不参与问题判定）
-    suggested_revision: str = ""
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -210,7 +208,13 @@ class ReportSummary(BaseModel):
 
 
 class CompareFinding(BaseModel):
-    """对比页逐条明细：与 Finding 同构，供双栏问题清单直接渲染。"""
+    """对比页逐条明细：与 Finding 同构，供双栏问题清单直接渲染。
+
+    revision_status 区分「可文字改写」与「结构性不可自动改写」：
+    - rewritten：示范改写成功写入修改稿对应段落；
+    - manual：结论依赖图表/数据/外部材料，必须作者本人核对后才算解决；
+    - pending：附有示范改写，但未定位到可替换的段落。
+    """
 
     checklist_item_id: str
     headline: str = ""
@@ -219,7 +223,8 @@ class CompareFinding(BaseModel):
     anchors: list[Anchor] = Field(default_factory=list)
     description: str = ""
     suggestion: str = ""
-    suggested_revision: str = ""
+    revision_status: Literal["rewritten", "manual", "pending"] = "pending"
+    revision_note: str = ""
 
 
 class CompareResponse(BaseModel):
