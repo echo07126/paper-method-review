@@ -52,3 +52,32 @@ def test_report_page_exposes_optional_revision_view() -> None:
     detail = (ROOT.parent / "frontend" / "src" / "components" / "FindingDetail.vue").read_text(encoding="utf-8")
     assert "showRevision" in view and "显示修改后" in view, "报告页缺少「修改后」开关"
     assert "suggested_revision" in detail, "详情组件未渲染修改后示范"
+
+
+def test_followup_and_fulltext_prompts_are_distinct() -> None:
+    """追问与自由提问的系统提示、提问前缀必须不同，避免两种模式被当成同一种对话。"""
+    from app.engine.chat_history import build_system_message
+    from app.engine.qa_context import build_qa_system_message
+
+    followup = build_system_message()["content"]
+    fulltext = build_qa_system_message()["content"]
+
+    assert followup != fulltext
+    assert "只" in followup and "这一条" in followup or "某一条" in followup
+    assert "全文" in fulltext and "任意位置" in fulltext
+
+    routes = (ROOT / "app" / "api" / "routes_chat.py").read_text(encoding="utf-8")
+    assert "【这一条】" in routes, "追问路径缺少单条作用域声明"
+    assert "【全文自由提问】" in routes, "自由提问路径缺少全文作用域声明"
+
+
+def test_report_page_merges_detail_into_list() -> None:
+    """详情需内联进问题清单（点击展开），不再单独占一栏。"""
+    view = (ROOT.parent / "frontend" / "src" / "views" / "ReportView.vue").read_text(encoding="utf-8")
+    listing = (ROOT.parent / "frontend" / "src" / "components" / "FindingList.vue").read_text(encoding="utf-8")
+    drawer = (ROOT.parent / "frontend" / "src" / "components" / "ChatDrawer.vue").read_text(encoding="utf-8")
+
+    assert "FindingDetail" not in view, "问题详情应内联进清单，不再单独占一栏"
+    assert "suggested_revision" in listing, "清单展开后应可看到修改后示范"
+    assert "追问这条" in listing
+    assert "全文自由提问" in drawer and "追问这条问题" in drawer, "两种对话需有独立标题"

@@ -5,7 +5,6 @@ import { useRoute } from "vue-router";
 import client from "@/api/client";
 import type { DocumentResponse, Finding, ReviewReport, Table } from "@/api/types";
 import ChatDrawer from "@/components/ChatDrawer.vue";
-import FindingDetail from "@/components/FindingDetail.vue";
 import FindingList from "@/components/FindingList.vue";
 import PaperPreview from "@/components/PaperPreview.vue";
 import { useSessionStore } from "@/stores/session";
@@ -36,9 +35,11 @@ const topRisk = computed(() => {
 });
 
 const loadError = ref("");
+const loading = ref(true);
 
 onMounted(async () => {
   loadError.value = "";
+  loading.value = true;
   const reportId = (route.params.id as string) || store.reportId;
   if (reportId) {
     try {
@@ -59,6 +60,7 @@ onMounted(async () => {
       // 原文不可见时仍可查看报告结论，不阻断主流程
     }
   }
+  loading.value = false;
 });
 
 function selectFinding(finding: Finding) {
@@ -70,20 +72,35 @@ function askFinding(finding: Finding) {
   drawerOpen.value = true;
 }
 
+/** 自由提问：不带 finding，后端据此注入全文并沿用会话记忆 */
 function openFreeChat() {
+  activeFinding.value = null;
   drawerOpen.value = true;
 }
+
+const severityFilters = computed(() => ({
+  all: report.value?.findings.length ?? 0,
+  problem: report.value?.counts.total ?? 0,
+  high: report.value?.counts.high ?? 0,
+  mid: report.value?.counts.mid ?? 0,
+  low: report.value?.counts.low ?? 0,
+  uncertain: report.value?.counts.uncertain ?? 0,
+  pass: report.value?.counts.pass ?? 0,
+}));
 </script>
 
 <template>
   <div v-if="report" class="report">
     <div class="toolbar">
       <div class="title">审查报告</div>
-      <span class="chip high">严重 {{ report.counts.high ?? 0 }}</span>
-      <span class="chip mid">中等 {{ report.counts.mid ?? 0 }}</span>
-      <span class="chip low">轻微 {{ report.counts.low ?? 0 }}</span>
-      <span class="chip pass">通过 {{ report.counts.pass ?? 0 }}</span>
-      <span class="chip" :class="showRevision ? 'on' : ''">
+      <button class="chip high" :class="{ on: filter === 'problem' }" @click="filter = filter === 'problem' ? 'all' : 'problem'">
+        严重 {{ report.counts.high ?? 0 }}
+      </button>
+      <button class="chip mid" @click="filter = filter === 'uncertain' ? 'all' : 'uncertain'">存疑 {{ report.counts.uncertain ?? 0 }}</button>
+      <button class="chip low" :class="{ on: filter === 'pass' }" @click="filter = filter === 'pass' ? 'all' : 'pass'">
+        通过 {{ report.counts.pass ?? 0 }}
+      </button>
+      <span class="chip revision" :class="{ on: showRevision }">
         <label class="revision-toggle">
           <input v-model="showRevision" type="checkbox" />
           显示修改后
@@ -91,7 +108,7 @@ function openFreeChat() {
       </span>
       <div class="toolbar-actions">
         <a class="btn" :href="`/api/v1/reports/${report.report_id}/export?format=markdown`" target="_blank">导出 Markdown</a>
-        <button class="btn primary" @click="openFreeChat">自由提问 →</button>
+        <button class="btn primary" @click="openFreeChat">全文自由提问 →</button>
       </div>
     </div>
 
@@ -127,24 +144,19 @@ function openFreeChat() {
       {{ report.demote_on_figures ? "本次已启用保守模式，可能依赖图像证据的条目已列为「存疑」。" : "如统计量仅标在图像内，相关条目可能漏报或误报。" }}
     </p>
 
-    <div class="filters">
-      <button :class="{ on: filter === 'all' }" @click="filter = 'all'">全部（{{ report.findings.length }}）</button>
-      <button :class="{ on: filter === 'problem' }" @click="filter = 'problem'">仅问题（{{ report.counts.total ?? 0 }}）</button>
-      <button :class="{ on: filter === 'uncertain' }" @click="filter = 'uncertain'">仅存疑（{{ report.counts.uncertain ?? 0 }}）</button>
-      <button :class="{ on: filter === 'pass' }" @click="filter = 'pass'">仅通过（{{ report.counts.pass ?? 0 }}）</button>
-    </div>
-
-    <div class="grid">
-      <div class="left-col">
+    <div class="report-grid">
+      <div class="list-col">
+        <div class="filters">
+          <button :class="{ on: filter === 'all' }" @click="filter = 'all'">全部（{{ severityFilters.all }}）</button>
+          <button :class="{ on: filter === 'problem' }" @click="filter = 'problem'">仅问题（{{ severityFilters.problem }}）</button>
+          <button :class="{ on: filter === 'uncertain' }" @click="filter = 'uncertain'">仅存疑（{{ severityFilters.uncertain }}）</button>
+          <button :class="{ on: filter === 'pass' }" @click="filter = 'pass'">仅通过（{{ severityFilters.pass }}）</button>
+        </div>
         <FindingList
           :findings="visibleFindings"
           :active-id="activeFinding?.finding_id"
+          :show-revision="showRevision"
           @select="selectFinding"
-        />
-        <FindingDetail
-          v-model:show-revision="showRevision"
-          :selected="activeFinding"
-          @locate="selectFinding"
           @ask="askFinding"
         />
       </div>
@@ -163,6 +175,7 @@ function openFreeChat() {
       @close="drawerOpen = false"
     />
   </div>
+  <div v-else-if="loading" class="empty">正在加载审查报告…</div>
   <p v-else-if="loadError" class="empty error">{{ loadError }}</p>
   <p v-else class="empty">暂无报告：请先在上传页完成解析与审查。</p>
 </template>
@@ -173,12 +186,13 @@ function openFreeChat() {
 .toolbar-actions { margin-left: auto; display: flex; gap: 8px; }
 .btn { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 16px; font-size: 13px; color: var(--ink); text-decoration: none; cursor: pointer; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--bg); color: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--bg); color: var(--ink-2); cursor: pointer; border: none; }
 .chip.high { background: var(--sev-high-bg); color: var(--sev-high); }
 .chip.mid { background: var(--sev-mid-bg); color: var(--sev-mid); }
 .chip.low { background: var(--sev-low-bg); color: var(--sev-low); }
 .chip.pass { background: var(--pass-bg); color: var(--pass); }
-.chip.on { background: var(--accent-soft); color: var(--accent-ink); }
+.chip.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip.revision { cursor: default; }
 .revision-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .statrow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .stat { flex: 1; min-width: 140px; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
@@ -187,16 +201,22 @@ function openFreeChat() {
 .stat .lbl { font-size: 12px; color: var(--ink-2); }
 .tiny { font-size: 11.5px; color: var(--ink-3); }
 .figure-note { background: var(--sev-mid-bg); color: var(--sev-mid); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
-.filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.filters button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 13px; }
+.filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.filters button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
 .filters button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.grid { display: grid; grid-template-columns: 400px 1fr; gap: 20px; align-items: start; }
-.left-col { display: flex; flex-direction: column; }
+.report-grid { display: grid; grid-template-columns: 400px 1fr; gap: 20px; align-items: start; }
+.list-col { display: flex; flex-direction: column; min-height: 0; }
 .paper-col { position: sticky; top: 70px; }
 .empty { color: var(--ink-3); }
 .error { color: var(--sev-high); }
 @media (max-width: 980px) {
-  .grid { grid-template-columns: 1fr; }
+  .report-grid { grid-template-columns: 1fr; }
   .paper-col { position: static; }
+}
+@media (min-height: 820px) {
+  .report-grid { height: calc(100vh - 300px); min-height: 430px; }
+  .list-col, .paper-col { height: 100%; min-height: 0; }
+  .list-col :deep(.finding-list) { height: 100%; min-height: 0; }
+  .paper-col :deep(.paper) { max-height: 100%; }
 }
 </style>
