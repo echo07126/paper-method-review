@@ -23,7 +23,33 @@ const body = ref<HTMLElement | null>(null);
 /** 会话数据被清理后，用本地上下文继续追问（服务端仅在落库为空时采用）。 */
 let localHistory: ChatMessage[] = [];
 
-const scopeLabel = computed(() => (scope.value === "fulltext" ? "全文问答" : "追问这条"));
+const isFulltext = computed(() => scope.value === "fulltext");
+
+/** 两种模式在标题、开场白、占位符、示例问法上完全区分，避免被当成同一种对话。 */
+const scopeLabel = computed(() => (isFulltext.value ? "全文自由提问" : "追问这条问题"));
+const scopeHint = computed(() =>
+  isFulltext.value
+    ? "模型已通读全文并记忆本会话 · 可问全文任意位置"
+    : "仅围绕这一条问题作答 · 不扩展到全文",
+);
+const placeholder = computed(() =>
+  isFulltext.value
+    ? "就全文任意部分提问：方法、实验、写作、可扩展方向…"
+    : "追问这条问题：为什么算问题、该怎么改…",
+);
+const starterExamples = computed<string[]>(() =>
+  isFulltext.value
+    ? [
+        "这篇文章最致命的三个方法学问题是什么？",
+        "如果只能再补一个实验，补哪个最划算？",
+        "结论外推的部分，应该限定到什么范围？",
+      ]
+    : [
+        "这条为什么算问题？审稿人会怎么追问？",
+        "给出可直接替换这段的改写句式。",
+        "要补哪些数据或实验才算达标？",
+      ],
+);
 
 function contextualQuestion(question: string): string {
   if (!props.finding) return question;
@@ -73,12 +99,16 @@ function reset() {
   if (props.finding) {
     messages.value.push({
       role: "assistant",
-      content: `已定位「${props.finding.headline}」。可以继续追问这条问题的改法，也可以直接问全文可优化、可扩展的方向。`,
+      content:
+        `已锁定「${props.finding.headline}」（段落 ${props.finding.anchors[0]?.paragraph_index ?? "-"}）。\n` +
+        "接下来只围绕这条问题回答：为什么算问题、审稿人会怎么追问、怎么改才算达标。",
     });
   } else {
     messages.value.push({
       role: "assistant",
-      content: "已读取全文。你可以询问任意段落的写法、方法学可优化点，或后续可扩展的研究方向。",
+      content:
+        "已通读全文并在本会话内记住内容。\n" +
+        "可以直接问任意位置：方法学是否站得住、实验够不够、结论能否外推，也可以问这项研究还能往哪扩展。",
     });
   }
 }
@@ -94,20 +124,16 @@ watch(
 </script>
 
 <template>
-  <aside v-if="open" class="drawer" aria-label="论文问答">
+  <aside v-if="open" class="drawer" :class="isFulltext ? 'drawer-fulltext' : 'drawer-finding'" aria-label="论文问答">
     <header class="head">
       <div class="head-main">
         <b>{{ scopeLabel }}</b>
-        <span class="scope-chip">{{ scope === "fulltext" ? "已载入全文" : "绑定当前问题" }}</span>
+        <span class="scope-chip">{{ isFulltext ? "全文" : "单条" }}</span>
       </div>
       <button class="close" type="button" @click="emit('close')">✕</button>
     </header>
 
-    <p v-if="finding" class="ctx">
-      当前上下文：{{ finding.headline }}（段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }}）
-      · 也可直接问全文其他问题
-    </p>
-    <p v-else class="ctx">上下文：全文 · 模型已读取本文内容并记忆本会话对话</p>
+    <p class="ctx">{{ scopeHint }}</p>
 
     <div ref="body" class="body">
       <div
@@ -119,17 +145,25 @@ watch(
         {{ message.content }}
       </div>
       <div v-if="loading" class="bubble a thinking">正在思考…</div>
+      <div v-if="messages.length <= 1 && !loading" class="examples">
+        <span class="examples-label">{{ isFulltext ? "试试这样问" : "常见追问" }}</span>
+        <button
+          v-for="example in starterExamples"
+          :key="example"
+          type="button"
+          class="example"
+          @click="input = example"
+        >
+          {{ example }}
+        </button>
+      </div>
     </div>
 
     <p v-if="truncated" class="hint">上下文已达上限（最近 10 轮 / 8000 字符），更早的对话已被截断。</p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <form class="composer" @submit.prevent="send">
-      <input
-        v-model="input"
-        :placeholder="finding ? '追问这条，或直接问全文…' : '询问本文可优化、可扩展的方向…'"
-        :disabled="loading"
-      />
+      <input v-model="input" :placeholder="placeholder" :disabled="loading" />
       <button type="submit" :disabled="loading || !input.trim()">发送</button>
     </form>
   </aside>
@@ -141,6 +175,10 @@ watch(
   background: #fff; box-shadow: -12px 0 40px rgba(20, 24, 40, 0.12);
   display: flex; flex-direction: column; z-index: 80;
 }
+.drawer-fulltext { border-top: 3px solid var(--accent); }
+.drawer-finding { border-top: 3px solid var(--sev-mid); }
+.drawer-fulltext .scope-chip { color: var(--accent-ink); background: var(--accent-soft); }
+.drawer-finding .scope-chip { color: var(--sev-mid); background: var(--sev-mid-bg); }
 .head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .head-main { display: flex; align-items: center; gap: 8px; }
 .scope-chip { font-size: 11px; color: var(--accent-ink); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; }
@@ -152,6 +190,13 @@ watch(
 .bubble.a { background: var(--bg); align-self: flex-start; border-bottom-left-radius: 4px; }
 .bubble.thinking { color: var(--ink-3); }
 .hint { margin: 0; padding: 6px 18px; font-size: 12px; color: var(--ink-3); }
+.examples { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.examples-label { font-size: 11.5px; color: var(--ink-3); }
+.example {
+  text-align: left; font-size: 12.5px; padding: 8px 11px; border-radius: 10px;
+  border: 1px dashed var(--line); background: #fff; color: var(--ink-2); cursor: pointer;
+}
+.example:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
 .error { margin: 0; padding: 6px 18px; font-size: 12px; color: var(--sev-high); }
 .composer { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
 .composer input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px; }
