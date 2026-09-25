@@ -209,12 +209,31 @@ class ReportSummary(BaseModel):
     created_at: str
 
 
+class CompareFinding(BaseModel):
+    """对比页逐条明细：与 Finding 同构，供双栏问题清单直接渲染。"""
+
+    checklist_item_id: str
+    headline: str = ""
+    severity: Severity = Severity.MID
+    verdict: Verdict = Verdict.PROBLEM
+    anchors: list[Anchor] = Field(default_factory=list)
+    description: str = ""
+    suggestion: str = ""
+    suggested_revision: str = ""
+
+
 class CompareResponse(BaseModel):
     before: dict[str, int]
     after: dict[str, int]
     resolved: list[str]
     new: list[str]
     kept: list[str]
+    # 明细在保持排序键不变的前提下追加，旧客户端字段不受影响
+    before_findings: list[CompareFinding] = Field(default_factory=list)
+    after_findings: list[CompareFinding] = Field(default_factory=list)
+    resolved_findings: list[CompareFinding] = Field(default_factory=list)
+    new_findings: list[CompareFinding] = Field(default_factory=list)
+    kept_findings: list[CompareFinding] = Field(default_factory=list)
 
 
 class ChatMessage(BaseModel):
