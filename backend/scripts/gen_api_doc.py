@@ -14,7 +14,8 @@ PURPOSE = {
     "/api/v1/reports": "列出当前会话的报告（供修改对比选择）",
     "/api/v1/reports/{report_id}": "读取单份报告全文（findings 含锚点）",
     "/api/v1/reports/{report_id}/export": "导出报告（format=markdown）",
-    "/api/v1/reports/{report_id}/chat": "针对报告追问（多轮上下文；有 Key 走模型，无 Key 模板降级）",
+    "/api/v1/reports/{report_id}/chat": "报告问答（scope=finding 追问单条 / scope=fulltext 全文自由提问；有 Key 走模型，无 Key 模板降级）",
+    "/api/v1/reports/{report_id}/revision": "按报告问题生成修改稿并二次审查（模型结合全文补写、校验原文出处）",
     "/api/v1/compare": "修改前后对比（两份 report_id）",
     "/api/v1/sessions/purge": "删除当前会话数据（数据库 + 临时文件）",
 }
@@ -28,8 +29,9 @@ RESPONSE_FIELDS = {
     "/api/v1/reports": "[{report_id, document_id, document_name, counts{}, created_at}]",
     "/api/v1/reports/{report_id}": "report_id, document_name, checklist_version, findings[], counts{}, duration_ms, tokens{}, notes[], figure_references, demote_on_figures",
     "/api/v1/reports/{report_id}/export": "Markdown 文本（PlainTextResponse）",
-    "/api/v1/reports/{report_id}/chat": "answer, source(llm|fallback), tokens?(llm), note?(fallback), session_id, history[], truncated",
-    "/api/v1/compare": "before{}, after{}, resolved[], new[], kept[]",
+    "/api/v1/reports/{report_id}/chat": "answer, source(llm|fallback), tokens?(llm), note?(fallback), session_id, history[], truncated, scope",
+    "/api/v1/reports/{report_id}/revision": "report_id, document_name, findings[], counts{}, notes[], tokens{}（修改稿二次审查报告）",
+    "/api/v1/compare": "before{}, after{}, resolved[], new[], kept[], before_findings[], after_findings[], resolved_findings[]",
     "/api/v1/sessions/purge": "status",
 }
 
@@ -94,6 +96,8 @@ def main() -> int:
         "- 错误响应统一为 `{code, message, request_id}`；跨会话访问他人资源返回 404。",
         "- 审查参数：`use_llm`（是否启用模型顾问，**不传则用服务端默认 `LLM_DEFAULT_ENABLED=true`，即默认启用**）、`demote_on_figures`（图表未解析时是否保守降级，不传则用服务端默认）。",
         "- 追问上下文：`history` 为客户端可选的 `[{role, content}]`（服务端仅在落库历史为空时采用）；上限 `CHAT_HISTORY_MAX_TURNS=10`（即 20 条消息）与 `CHAT_HISTORY_MAX_CHARS=8000`（含 system），超出时**整轮截断**并置 `truncated=true`。",
+        "- 报告问答作用域：`scope=finding`（追问，注入单条问题上下文）与 `scope=fulltext`（自由提问，注入全文 DATA 区，`QA_FULLTEXT_MAX_CHARS=12000`）；两者共用同一轮数与字符上限。",
+        "- 对比参数：`use_llm`（是否用模型结合全文生成修改稿补写，不传则用服务端默认；关闭则退回清单规范句式）；未提供 `after_report_id` 时后端自动生成修改稿并二次审查。",
         "",
         "## 4. 已知缺口",
         "- 已解决：全部接口声明 `response_model`，OpenAPI 含响应结构；`tests/test_api_contract.py` 做前后端字段契约校验。",
