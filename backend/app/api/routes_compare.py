@@ -17,7 +17,8 @@ router = APIRouter(tags=["compare"])
 class CompareRequest(BaseModel):
     before_report_id: str
     after_report_id: str | None = None
-    use_llm: bool = False
+    # 生成修改稿需要模型结合全文写补写句，默认开启；显式传 false 则退回清单规范句式
+    use_llm: bool | None = None
 
 
 def _detail(finding) -> dict:
@@ -30,6 +31,23 @@ def _detail(finding) -> dict:
         "description": finding.description,
         "suggestion": finding.suggestion,
     }
+
+
+REVISION_NOTE = (
+    "修改稿的补写内容由模型结合全文生成，每条均要求给出可核验的原文出处；"
+    "未给出可用出处的条目不会被写入，仍列在修改稿清单中由作者处理。"
+)
+REVISION_NOTE_RULE = (
+    "本次生成修改稿时未调用模型，补写内容来自清单的规范句式，需核对与本文实际数据是否一致。"
+)
+
+
+def _revision_note(status: dict[str, tuple[str, str]], used_llm: bool) -> str:
+    counts = {"rewritten": 0, "manual": 0, "pending": 0}
+    for state, _ in status.values():
+        counts[state] = counts.get(state, 0) + 1
+    detail = f"（自动补写 {counts['rewritten']} 条、需作者处理 {counts['manual'] + counts['pending']} 条）"
+    return (REVISION_NOTE if used_llm else REVISION_NOTE_RULE) + detail
 
 
 def _problems(report: ReviewReport) -> dict[str, object]:
@@ -75,13 +93,15 @@ def compare(payload: CompareRequest, request: Request, response: Response) -> di
     document = DocumentIR(**store.authorized_document(session_id, document_id))
     items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
     provider = build_provider(settings)
-    _, after, revised_document, _ = review_and_compare(
+    use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
+    _, after, revised_document, revision_status = review_and_compare(
         document,
         items,
         provider=provider,
-        use_llm=payload.use_llm and provider is not None,
+        use_llm=use_llm and provider is not None,
         media_root=Path(settings.temp_dir) / session_id,
     )
+    after.notes = [*after.notes, _revision_note(revision_status, use_llm and provider is not None)]
     revised_document_id = store.save_document(
         session_id, revised_document.source_name, revised_document.model_dump_json()
     )

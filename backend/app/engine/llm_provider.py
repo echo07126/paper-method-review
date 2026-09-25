@@ -23,9 +23,13 @@ class LLMResult:
 
 
 class LLMProvider(Protocol):
-    def complete_structured(self, messages: list[dict], temperature: float = 0.0) -> LLMResult: ...
+    def complete_structured(
+        self, messages: list[dict], temperature: float = 0.0, max_tokens: int | None = None
+    ) -> LLMResult: ...
 
-    def complete_text(self, messages: list[dict], temperature: float = 0.3) -> LLMResult: ...
+    def complete_text(
+        self, messages: list[dict], temperature: float = 0.3, max_tokens: int | None = None
+    ) -> LLMResult: ...
 
 
 class DeepSeekProvider:
@@ -75,13 +79,18 @@ class DeepSeekProvider:
             attempt,
         )
 
-    def complete_text(self, messages: list[dict], temperature: float = 0.3) -> LLMResult:
+    def complete_text(
+        self, messages: list[dict], temperature: float = 0.3, max_tokens: int | None = None
+    ) -> LLMResult:
         """自由文本调用（不含 JSON 约束），用于追问答疑等自然语言场景。"""
         started = time.monotonic()
         last_error: Exception | None = None
+        request: dict = {"model": self.model, "messages": messages, "temperature": temperature}
+        if max_tokens:
+            request["max_tokens"] = max_tokens
         for attempt in range(self.max_retries + 1):
             try:
-                payload, trace_id = self._post({"model": self.model, "messages": messages, "temperature": temperature})
+                payload, trace_id = self._post(request)
                 self._log_call("text", payload, trace_id, started, attempt)
                 usage = payload.get("usage", {})
                 return LLMResult(
@@ -100,20 +109,23 @@ class DeepSeekProvider:
                     time.sleep(min(2 ** attempt, 8))
         raise LLMUnavailable(f"模型调用失败（已重试 {self.max_retries} 次）：{last_error}")
 
-    def complete_structured(self, messages: list[dict], temperature: float = 0.0) -> LLMResult:
+    def complete_structured(
+        self, messages: list[dict], temperature: float = 0.0, max_tokens: int | None = None
+    ) -> LLMResult:
         """结构化 JSON 调用：要求返回合法 JSON，否则重试。"""
         started = time.monotonic()
         last_error: Exception | None = None
+        request: dict = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "response_format": {"type": "json_object"},
+        }
+        if max_tokens:
+            request["max_tokens"] = max_tokens
         for attempt in range(self.max_retries + 1):
             try:
-                payload, trace_id = self._post(
-                    {
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": temperature,
-                        "response_format": {"type": "json_object"},
-                    }
-                )
+                payload, trace_id = self._post(request)
                 content = payload["choices"][0]["message"]["content"]
                 json.loads(content)
                 self._log_call("structured", payload, trace_id, started, attempt)

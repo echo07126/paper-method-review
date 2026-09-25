@@ -18,7 +18,7 @@ const error = ref("");
 const locatingHint = ref("");
 const loading = ref(false);
 const loadingStage = ref("");
-const useLlm = ref(false);
+const useLlm = ref(true);
 const activeSide = ref<"before" | "after">("before");
 const activeId = ref<string | null>(null);
 const beforeParagraphs = ref<Array<{ index: number; text: string }>>([]);
@@ -190,7 +190,7 @@ function statusLabel(status?: string): string {
     <p v-if="!afterId" class="auto-note">
       <label class="auto-option">
         <input v-model="useLlm" type="checkbox" />
-        生成修改稿时同时启用模型顾问（会产生 token 消耗；关闭则只用规则引擎复审判定）
+        用模型结合全文生成补写（每条附原文出处，无依据不写；关闭则退回清单规范句式）
       </label>
     </p>
 
@@ -285,7 +285,9 @@ function statusLabel(status?: string): string {
             >
               <span class="cmp-f-head">
                 <SeverityChip :severity="finding.severity" />
-                <span class="status" :class="finding.revision_status">{{ statusLabel(finding.revision_status) }}</span>
+                <span class="status" :class="finding.revision_status" :title="finding.revision_note || ''">
+                  {{ statusLabel(finding.revision_status) }}
+                </span>
               </span>
               <span class="cmp-f-title">{{ finding.headline }}</span>
               <span class="tiny">段落 {{ finding.anchors[0]?.paragraph_index ?? "-" }} · 点击定位原文</span>
@@ -349,6 +351,7 @@ function statusLabel(status?: string): string {
 .status { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--bg); color: var(--ink-3); }
 .status.rewritten { background: var(--pass-bg); color: var(--pass); }
 .status.manual { background: var(--sev-mid-bg); color: var(--sev-mid); }
+.status.pending { background: var(--sev-low-bg); color: var(--sev-low); }
 .workbench { padding: 10px 12px 14px; }
 .workbench :deep(.paper) { border: none; box-shadow: none; border-radius: 0; max-height: none; padding: 18px 22px; }
 .workbench :deep(.hl) { scroll-margin-top: 90px; }
