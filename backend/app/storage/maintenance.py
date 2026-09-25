@@ -5,7 +5,7 @@
 - 会话过期判定：`sessions.expires_at < now`（`SESSION_TTL_HOURS`，默认 2 小时）。
 - 临时文件残留：`TEMP_DIR` 下**不属于任何存活会话**的子目录一律删除，
   覆盖进程被杀、异常退出等导致的泄漏。
-- 数据库内文档正文（`documents.ir_json`）随会话过期一并删除，
+- 数据库内文档正文（`documents.ir_json`）与追问历史（`chat_messages`）随会话过期一并删除，
   与「正文仅在本次会话内暂存」的隐私口径一致。
 - `DATA_RETENTION_HOURS` 作为保留期下限：即使会话未过期，超过该时长的数据也一并清理。
 """
@@ -25,6 +25,7 @@ def _now() -> datetime:
 
 def _purge_session_rows(connection, session_ids: list[str]) -> None:
     for session_id in session_ids:
+        connection.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM reports WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM documents WHERE session_id = ?", (session_id,))
         connection.execute("DELETE FROM jobs WHERE session_id = ?", (session_id,))

@@ -2,5 +2,5 @@
 # 后端运行时依赖的唯一来源是 backend/requirements.txt，避免两份清单漂移。
 -r backend/requirements.txt
 
-# ---- 开发与测试 ----
-pytest
+# ---- 开发与测试（版本固定）----
+pytest==9.1.1

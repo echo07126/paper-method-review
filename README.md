@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-> 指标口径统一以 `python backend/scripts/eval_ac.py` 的实际输出为准（数据截至 2026-09-20）。
+> 指标口径统一以 `python backend/scripts/eval_ac.py` 的实际输出为准（数据截至 2026-09-25）。
 
 | 门禁 | 结果 | 说明 |
 | --- | --- | --- |
@@ -12,9 +12,10 @@
 | AC-2 检出 | **82/82 = 100%** | 规则引擎模式 |
 | 精确率 | **82/82 = 100%** | 规则引擎模式 |
 | AC-3 定位 | **79/82 = 96%** | 容差 ±1 段 |
-| 单元测试 | **46 passed** | `pytest backend/tests -q` |
-| 安全核查 | **31/31** | `security_audit.py` |
+| 单元测试 | **69 passed** | `pytest backend/tests -q` |
+| 安全核查 | **33/33** | `security_audit.py` |
 | 生产上线 | **0/8 已完成** | `deploy_gate.py` 返回非零，阻止对外公开 |
+| 二期进度 | **P2-1 / P2-2 / P2-3 / P2-4 已完成** | 表体结构化 + OMML 公式提取 + L1 图-文一致性 + L3 图像内容识读 + 追问多轮上下文；规划见 `docs/product/软件需求说明.md` §15.5 |
 
 ## 核心能力
 
@@ -22,9 +23,11 @@
 - **规则优先、模型增强**：规则引擎可离线运行；DeepSeek 仅作顾问判定，输出必须通过结构化校验和证据门控。
 - **可追溯报告**：Finding 保存清单条目、严重级、说明、建议及段落/句子锚点；无证据的模型断言不进入报告。
 - **隐私与安全**：匿名会话隔离、上传校验、日志脱敏、限流、删除传播和生产配置守卫；正文仅在会话内暂存，运行期每 5 分钟由常驻任务回收过期会话与孤儿临时目录。
-- **可扩展结构**：解析器、清单、LLM Provider、报告导出器均以接口或配置解耦；一期仅实现 DOCX，PDF 保留接口。
+- **可扩展结构**：解析器、清单、LLM Provider、报告导出器均以接口或配置解耦；一期仅实现 DOCX，PDF 保留接口。二期（§15.5）在 DOCX 上解除「不解析公式与图片」边界：表格结构化入 `tables[]`、OMML 公式文本提取、内嵌图片视觉识读，Provider 不变。
 
 ## 本地运行
+
+> 完整的本地启动、配置项速查、自测命令与故障排查见 [`docs/operations/本地启动运行手册.md`](docs/operations/本地启动运行手册.md)。以下为最简版。
 
 ### 后端
 
@@ -34,8 +37,10 @@ source .venv/bin/activate          # Windows PowerShell: .\.venv\Scripts\Activat
 python -m pip install -r requirements.txt
 cp backend/.env.example backend/.env   # Windows: Copy-Item
 # 在 backend/.env 填写 DEEPSEEK_API_KEY；不配置时仍可使用规则引擎
-python -m uvicorn backend.app.main:app --port 8000
+cd backend && python -m uvicorn app.main:app --port 8000
 ```
+
+> 必须在 `backend/` 目录内启动：`CHECKLIST_DIR=../checklists` 等相对路径以该目录为基准。
 
 接口文档仅在 `DOCS_ENABLED=true` 时开放：<http://127.0.0.1:8000/docs>。
 
@@ -43,7 +48,7 @@ python -m uvicorn backend.app.main:app --port 8000
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 npm run typecheck
 npm run build
@@ -57,6 +62,12 @@ docker compose up -d --build
 ```
 
 Compose 仅绑定本机回环端口；`data/` 为运行数据卷，`checklists/` 只读挂载。
+
+### 依赖锁定
+
+- 后端直接依赖在 `backend/requirements.txt` 中用 `==` 固定版本，开发依赖在根 `requirements.txt` 中同样固定；CI、镜像构建与本地安装共用同一份清单，避免「本地过、线上挂」。
+- 前端由 `frontend/package-lock.json` 锁定（已入库）。
+- 升级依赖时先改清单再跑全套门禁（pytest / eval_ac / security_audit / api_check / 前端 build），确认无回归后再提交。
 
 ## 回归与上线门禁
 
@@ -117,6 +128,7 @@ paper-method-review/
 - 盲测报告：[`docs/evaluation/blind-tests/`](docs/evaluation/blind-tests/)
 - 样本与评测口径：[`samples/README.md`](samples/README.md)
 - 安全核查：[`docs/operations/安全与运维核查清单.md`](docs/operations/安全与运维核查清单.md)
+- 本地启动：[`docs/operations/本地启动运行手册.md`](docs/operations/本地启动运行手册.md)
 - 生产部署：[`docs/operations/生产部署启动手册.md`](docs/operations/生产部署启动手册.md)
 - 生产待办：[`docs/operations/生产上线待办清单.md`](docs/operations/生产上线待办清单.md)
 - 竞赛与答辩：[`docs/competition/`](docs/competition/)

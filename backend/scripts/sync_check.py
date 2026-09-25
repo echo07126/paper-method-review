@@ -76,6 +76,9 @@ def main() -> int:
     types_ts = (ROOT / "frontend" / "src" / "api" / "types.ts").read_text(encoding="utf-8")
     missing = [field for field in report_fields if field not in types_ts]
     print("  前端 ReviewReport 缺少字段：", missing or "无")
+    chat_fields = {"answer", "source", "session_id", "history", "truncated"}
+    chat_missing = [field for field in chat_fields if field not in types_ts]
+    print("  前端 ChatResponse 缺少字段：", chat_missing or "无")
     review_req = (ROOT / "backend" / "app" / "api" / "routes_review.py").read_text(encoding="utf-8")
     for field in ("document_id", "use_llm", "demote_on_figures"):
         print(f"  后端 ReviewRequest.{field}:", "存在" if field in review_req else "缺失")

@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_store, resolve_session
 from app.core.config import get_settings
+from app.engine.chat_history import build_chat_messages
 from app.engine.llm_provider import LLMUnavailable, build_provider
-from app.engine.prompts import SYSTEM_GUARD
-from app.models.schemas import ChatResponse, ReviewReport
+from app.models.schemas import ChatMessage, ChatResponse, ReviewReport
 
 router = APIRouter(tags=["chat"])
 
@@ -21,6 +21,8 @@ FALLBACK_TEMPLATE = (
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
     finding_id: str | None = None
+    # 客户端可携带本地上文；服务端以落库历史为准，仅在落库为空时采用（如会话数据已被清理）
+    history: list[ChatMessage] = Field(default_factory=list)
 
 
 @router.post("/reports/{report_id}/chat", response_model=ChatResponse)
@@ -34,17 +36,44 @@ def chat(report_id: str, payload: ChatRequest, request: Request, response: Respo
     context = ""
     if finding:
         context = f"问题：{finding.headline}\n说明：{finding.description}\n建议：{finding.suggestion}"
+    question = f"针对以下审查问题回答用户提问。\n{context}\n\n用户问题：{payload.question}"
+
+    keep = settings.chat_history_max_turns * 2
+    stored = store.list_chat_messages(session_id, report_id)
+    if not stored and payload.history:
+        stored = [message.model_dump() for message in payload.history]
+
+    messages, truncated = build_chat_messages(
+        stored,
+        question,
+        max_turns=settings.chat_history_max_turns,
+        max_chars=settings.chat_history_max_chars,
+    )
 
     provider = build_provider(settings)
     if provider is None:
-        return {"answer": FALLBACK_TEMPLATE, "source": "fallback", "note": "未配置模型服务，已使用规则模板回复（FR-D5）。"}
+        answer, source, tokens, note = (
+            FALLBACK_TEMPLATE,
+            "fallback",
+            None,
+            "未配置模型服务，已使用规则模板回复（FR-D5）。",
+        )
+    else:
+        try:
+            result = provider.complete_text(messages)
+            answer, source, tokens, note = result.content, "llm", result.tokens, None
+        except LLMUnavailable as exc:
+            answer, source, tokens, note = FALLBACK_TEMPLATE, "fallback", None, f"模型暂不可用：{exc}"
 
-    messages = [
-        {"role": "system", "content": SYSTEM_GUARD + "\n请用简洁的中文回答，给出可操作的修改建议。"},
-        {"role": "user", "content": f"针对以下审查问题回答用户提问。\n{context}\n\n用户问题：{payload.question}"},
-    ]
-    try:
-        result = provider.complete_text(messages)
-        return {"answer": result.content, "source": "llm", "tokens": result.tokens}
-    except LLMUnavailable as exc:
-        return {"answer": FALLBACK_TEMPLATE, "source": "fallback", "note": f"模型暂不可用：{exc}"}
+    store.append_chat_message(session_id, report_id, "user", payload.question, keep)
+    store.append_chat_message(session_id, report_id, "assistant", answer, keep)
+
+    return {
+        "answer": answer,
+        "source": source,
+        "tokens": tokens,
+        "note": note,
+        "session_id": session_id,
+        "history": store.list_chat_messages(session_id, report_id),
+        "truncated": truncated,
+    }

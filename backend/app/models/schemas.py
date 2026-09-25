@@ -65,6 +65,30 @@ class ReferenceEntry(BaseModel):
     anchor: Anchor
 
 
+class Table(BaseModel):
+    id: str
+    index: int
+    caption: str = ""
+    rows: list[list[str | None]] = Field(default_factory=list)
+    header_rows: int = 0
+    n_rows: int = 0
+    n_cols: int = 0
+    anchor: Anchor
+
+
+class ImageRef(BaseModel):
+    """内嵌图片：落盘到会话临时目录，供 L3 视觉识读（P2-3 / 需求 15.5.1）。"""
+
+    id: str
+    index: int
+    media_type: str = ""
+    byte_size: int = 0
+    filename: str = ""
+    caption: str = ""
+    caption_index: int | None = None
+    anchor: Anchor
+
+
 class DocumentIR(BaseModel):
     source_name: str
     parser: str
@@ -72,6 +96,8 @@ class DocumentIR(BaseModel):
     language: str = "zh"
     sections: list[Section] = Field(default_factory=list)
     paragraphs: list[Paragraph] = Field(default_factory=list)
+    tables: list[Table] = Field(default_factory=list)
+    images: list[ImageRef] = Field(default_factory=list)
     citations: list[CitationMarker] = Field(default_factory=list)
     references: list[ReferenceEntry] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -155,6 +181,7 @@ class DocumentResponse(BaseModel):
     source_name: str | None = None
     sections: list[Section] = Field(default_factory=list)
     paragraphs: list[Paragraph] = Field(default_factory=list)
+    tables: list[Table] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     parser: str | None = None
 
@@ -186,11 +213,19 @@ class CompareResponse(BaseModel):
     kept: list[str]
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     source: Literal["llm", "fallback"]
     tokens: dict[str, int] | None = None
     note: str | None = None
+    session_id: str = ""
+    history: list[ChatMessage] = Field(default_factory=list)
+    truncated: bool = False
 
 
 class PurgeResponse(BaseModel):

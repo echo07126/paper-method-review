@@ -3,16 +3,21 @@ from collections import Counter
 from pathlib import Path
 
 from docx import Document as load_docx
+from docx.oxml.ns import qn
+from docx.table import Table as DocxTable
+from docx.text.run import Run
 
 from app.core.ids import new_id
 from app.models.schemas import (
     Anchor,
     CitationMarker,
     DocumentIR,
+    ImageRef,
     Paragraph,
     ReferenceEntry,
     Section,
     Sentence,
+    Table,
 )
 from app.parsers.base import ParseError, ParserCapabilities
 
@@ -36,6 +41,27 @@ NUMBERING_PATTERN = re.compile(r"^\s*(?:(\d+(?:\.\d+)*)[\.、\s]|([一二三四�
 TERMINAL_PUNCTUATION = re.compile(r"[。！？.!?；;，,]\s*$")
 HEURISTIC_MAX_LENGTH = 80
 CAPTION_PATTERN = re.compile(r"^\s*(图|表|附图|附表|Fig\.?|Figure|Table)\s*\d+", re.IGNORECASE)
+TABLE_CAPTION_PATTERN = re.compile(r"^\s*(表|附表|Table|Supplementary\s+Table)\s*\d+", re.IGNORECASE)
+NUMERIC_CELL = re.compile(r"\d")
+MATH_TAGS = frozenset({qn("m:oMath"), qn("m:oMathPara")})
+MATH_TEXT_TAG = qn("m:t")
+RUN_TAG = qn("w:r")
+BLIP_TAG = qn("a:blip")
+# VML 图片（旧式浮动图）不在 python-docx 的 nsmap 中，直接用限定名
+IMAGEDATA_TAG = "{urn:schemas-microsoft-com:vml}imagedata"
+EMBED_ATTR = qn("r:embed")
+LINK_ATTR = qn("r:id")
+CONTENT_TYPE_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/bmp": "bmp", "image/tiff": "tif", "image/webp": "webp"}
+
+
+def _image_rel_ids(paragraph) -> list[str]:
+    """段落内嵌/浮动图片的关系 ID（按文档流顺序；drawing 与 VML 两种形态都覆盖）。"""
+    rel_ids: list[str] = []
+    for node in paragraph._p.iter(BLIP_TAG, IMAGEDATA_TAG):
+        rel_id = node.get(EMBED_ATTR) or node.get(LINK_ATTR)
+        if rel_id:
+            rel_ids.append(rel_id)
+    return rel_ids
 
 
 def is_citation_span(span: str, prev_char: str, next_char: str) -> bool:
@@ -144,9 +170,110 @@ def _estimate_body_size(document) -> None:
     _BODY_SIZE[0] = Counter(sizes).most_common(1)[0][0] if sizes else None
 
 
+def _paragraph_chunks(paragraph) -> list[tuple[str, bool, Run | None]]:
+    """按文档流顺序切分段落：普通 run 保留上标标记，OMML 公式转为纯文本块（run 为 None）。"""
+    run_map = {run._r: run for run in paragraph.runs}
+    chunks: list[tuple[str, bool, Run | None]] = []
+    for child in paragraph._p:
+        if child.tag == RUN_TAG:
+            run = run_map.get(child)
+            if run is not None:
+                chunks.append((run.text, bool(run.font.superscript), run))
+        elif child.tag in MATH_TAGS:
+            text = "".join(node.text or "" for node in child.iter(MATH_TEXT_TAG))
+            if text.strip():
+                chunks.append((text, False, None))
+    return chunks
+
+
+def _detect_header_rows(rows: list[list[str | None]]) -> int:
+    """保守策略：仅首行、且首行无数字时才认定为表头；否则 header_rows=0。"""
+    if len(rows) < 2:
+        return 0
+    first = [cell for cell in rows[0] if cell]
+    if not first:
+        return 0
+    if any(NUMERIC_CELL.search(cell) for cell in first):
+        return 0
+    return 1
+
+
+def _build_table(table: DocxTable, index: int, caption: str, anchor_index: int) -> Table:
+    """把 python-docx 表格转为二维网格；合并单元格以 None 占位，表头保守识别。"""
+    rows: list[list[str | None]] = []
+    previous_row: list = []
+    for row in table.rows:
+        current_row = list(row.cells)
+        cells: list[str | None] = []
+        previous_tc = None
+        for column, cell in enumerate(current_row):
+            merged = (previous_tc is not None and cell._tc is previous_tc) or (
+                column < len(previous_row) and cell is previous_row[column]
+            )
+            cells.append(None if merged else " ".join(cell.text.split()))
+            previous_tc = cell._tc
+        rows.append(cells)
+        previous_row = current_row
+    n_cols = max((len(row) for row in rows), default=0)
+    for row in rows:
+        row.extend([None] * (n_cols - len(row)))
+    return Table(
+        id=new_id("tbl"),
+        index=index,
+        caption=caption,
+        rows=rows,
+        header_rows=_detect_header_rows(rows),
+        n_rows=len(rows),
+        n_cols=n_cols,
+        anchor=Anchor(paragraph_index=anchor_index),
+    )
+
+
+def _image_caption(paragraphs: list[Paragraph], anchor_index: int) -> tuple[str, int | None]:
+    """图片题注：图题通常紧邻图片下方（与表题在上方相反），故向后找 3 段。"""
+    for paragraph in paragraphs:
+        if anchor_index < paragraph.index <= anchor_index + 3 and CAPTION_PATTERN.match(paragraph.text.strip()):
+            return paragraph.text.strip(), paragraph.index
+    return "", None
+
+
+def _save_images(document, path: Path, pending: list[tuple[str, int]], paragraphs: list[Paragraph]) -> list[ImageRef]:
+    """把内嵌图片落盘到会话目录下的 `<docx名>_media/`，并返回带锚点的 ImageRef。
+
+    落盘位置在会话临时目录内，因此 `purge_session_files()` 会随会话一并清除（无需额外删除链）。
+    """
+    if not pending:
+        return []
+    media_dir = path.parent / f"{path.stem}_media"
+    images: list[ImageRef] = []
+    for rel_id, anchor_index in pending:
+        part = document.part.related_parts.get(rel_id)
+        blob = getattr(part, "blob", b"") if part is not None else b""
+        if not blob:
+            continue
+        media_type = (getattr(part, "content_type", "") or "").lower()
+        filename = f"fig{len(images) + 1}.{CONTENT_TYPE_EXT.get(media_type, 'bin')}"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        (media_dir / filename).write_bytes(blob)
+        caption, caption_index = _image_caption(paragraphs, anchor_index)
+        images.append(
+            ImageRef(
+                id=new_id("img"),
+                index=len(images),
+                media_type=media_type,
+                byte_size=len(blob),
+                filename=f"{media_dir.name}/{filename}",
+                caption=caption,
+                caption_index=caption_index,
+                anchor=Anchor(paragraph_index=anchor_index),
+            )
+        )
+    return images
+
+
 class DocxParser:
     name = "docx"
-    version = "1.1"
+    version = "1.3"
     capabilities = ParserCapabilities(pages=False, superscript=True, bbox=False, tables=True, ocr=False)
 
     def supports(self, filename: str, mime: str | None) -> bool:
@@ -161,18 +288,44 @@ class DocxParser:
         _estimate_body_size(document)
 
         paragraphs: list[Paragraph] = []
+        tables: list[Table] = []
         sections: list[Section] = []
         sup_spans: list[tuple[int, str]] = []
+        pending_images: list[tuple[str, int]] = []
         heuristic_headings = 0
+        math_count = 0
+        table_count = 0
+        index = 0
 
-        for index, paragraph in enumerate(document.paragraphs):
-            runs = [(run.text, bool(run.font.superscript), run) for run in paragraph.runs]
-            text = "".join(part for part, _, _ in runs)
+        for block in document.iter_inner_content():
+            if isinstance(block, DocxTable):
+                table_count += 1
+                caption = ""
+                if paragraphs and TABLE_CAPTION_PATTERN.match(paragraphs[-1].text.strip()):
+                    caption = paragraphs[-1].text.strip()
+                tables.append(
+                    _build_table(
+                        block,
+                        index=table_count - 1,
+                        caption=caption,
+                        anchor_index=paragraphs[-1].index if paragraphs else 0,
+                    )
+                )
+                continue
+
+            paragraph = block
+            current = index
+            index += 1
+            # 图片锚点须在 `continue` 之前采集：纯图片段落（无文本）也会被跳过建段落
+            pending_images.extend((rel_id, current) for rel_id in _image_rel_ids(paragraph))
+            chunks = _paragraph_chunks(paragraph)
+            math_count += sum(1 for _, _, run in chunks if run is None)
+            text = "".join(part for part, _, _ in chunks)
             if not text.strip():
                 continue
             style = paragraph.style.name or "Normal"
             style_heading = style == "Title" or style.startswith("Heading")
-            run_objects = [run for _, _, run in runs]
+            run_objects = [run for _, _, run in chunks if run is not None]
             if style_heading:
                 is_heading, level = True, _style_level(style)
             else:
@@ -182,45 +335,33 @@ class DocxParser:
                     if not style or style == "Normal":
                         style = "HeuristicHeading"
             paragraphs.append(
-                Paragraph(index=index, text=text, style=style, is_heading=is_heading, sentences=split_sentences(text))
+                Paragraph(index=current, text=text, style=style, is_heading=is_heading, sentences=split_sentences(text))
             )
             if is_heading:
                 sections.append(
-                    Section(id=new_id("sec"), title=text.strip(), level=level, paragraph_index=index, confidence=1.0 if style_heading else 0.7)
+                    Section(id=new_id("sec"), title=text.strip(), level=level, paragraph_index=current, confidence=1.0 if style_heading else 0.7)
                 )
             buffer = ""
-            current: list[str] = []
-            for part, is_sup, _ in runs:
+            current_sup: list[str] = []
+            for part, is_sup, _ in chunks:
                 if is_sup:
-                    current.append(part)
+                    current_sup.append(part)
                     continue
-                if current:
-                    span = "".join(current)
+                if current_sup:
+                    span = "".join(current_sup)
                     if is_citation_span(span, buffer[-1] if buffer else "", part[:1]):
-                        sup_spans.append((index, span))
-                    current = []
+                        sup_spans.append((current, span))
+                    current_sup = []
                 buffer += part
-            if current:
-                span = "".join(current)
+            if current_sup:
+                span = "".join(current_sup)
                 if is_citation_span(span, buffer[-1] if buffer else "", ""):
-                    sup_spans.append((index, span))
+                    sup_spans.append((current, span))
 
         image_count = len(getattr(document, "inline_shapes", []))
-        table_count = 0
-        table_rows = 0
-        next_index = (max((p.index for p in paragraphs), default=-1) + 1) if paragraphs else 0
-        for table in getattr(document, "tables", []):
-            table_count += 1
-            for row in table.rows:
-                cells = [" ".join(cell.text.split()) for cell in row.cells]
-                row_text = " | ".join(cell for cell in cells if cell)
-                if not row_text:
-                    continue
-                paragraphs.append(
-                    Paragraph(index=next_index, text=row_text, style="Table", is_heading=False, sentences=split_sentences(row_text))
-                )
-                table_rows += 1
-                next_index += 1
+        images = _save_images(document, path, pending_images, paragraphs)
+        image_count = image_count or len(images)
+        table_rows = sum(table.n_rows for table in tables)
 
         ref_start = len(paragraphs)
         for position, paragraph in enumerate(paragraphs):
@@ -258,9 +399,12 @@ class DocxParser:
         if heuristic_headings:
             warnings.append(f"有 {heuristic_headings} 个标题通过版式启发式识别（非 Word 样式），建议核对章节边界。")
         if image_count:
-            warnings.append(f"文档含 {image_count} 张内嵌图片：图片/图表内容未解析，统计量若仅标注在图内可能漏检。")
+            warnings.append(
+                f"文档含 {image_count} 张内嵌图片（已落盘 {len(images)} 张供视觉识读）：图像内部数值不参与规则判定，"
+                "若统计量仅标注在图内可能漏检。"
+            )
         if table_count:
-            warnings.append(f"检测到 {table_count} 个表格（{table_rows} 行），已按行文本纳入审查（未做单元格结构解析）。")
+            warnings.append(f"检测到 {table_count} 个表格（{table_rows} 行），已做单元格结构解析并移出正文段落流。")
         if not references:
             warnings.append("未识别到参考文献列表，引用对账可能不完整。")
 
@@ -270,15 +414,19 @@ class DocxParser:
             parser_version=self.version,
             sections=sections,
             paragraphs=paragraphs,
+            tables=tables,
+            images=images,
             citations=citations,
             references=list(references.values()),
             warnings=warnings,
             meta={
                 "capabilities": self.capabilities.__dict__,
-                "paragraph_count": len(paragraphs) - table_rows,
+                "paragraph_count": len(paragraphs),
                 "image_count": image_count,
+                "image_saved": len(images),
                 "table_count": table_count,
                 "table_rows": table_rows,
+                "math_count": math_count,
                 "heuristic_headings": heuristic_headings,
             },
         )

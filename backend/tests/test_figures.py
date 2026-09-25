@@ -3,6 +3,7 @@ from pathlib import Path
 from docx import Document
 
 from app.engine.checklist import load_checklist
+from app.engine.elements import extract_elements, has_element
 from app.engine.figures import demote_for_figures, find_figure_references
 from app.engine.reviewer import review_document
 from app.models.schemas import Anchor, Finding, Severity, Verdict
@@ -62,3 +63,32 @@ def test_demote_flag_downgrades_figure_dependent_findings(tmp_path: Path) -> Non
     assert conservative.figure_references >= 1
     assert conservative.demote_on_figures is True
     assert conservative.counts["total"] < strict.counts["total"]
+
+
+def test_table_evidence_blocks_demotion(tmp_path: Path) -> None:
+    """表体已被结构化并抽出该条目证据时，不应再按「图表未解析」降级（需求 15.5.2）。"""
+    source = tmp_path / "table_evidence.docx"
+    doc = Document()
+    doc.add_heading("2. Methods", level=1)
+    doc.add_paragraph("As shown in Figure 1, the cohort details are summarised below.")
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Cohort"
+    table.cell(0, 1).text = "Size"
+    table.cell(1, 0).text = "训练队列"
+    table.cell(1, 1).text = "42 例"
+    doc.save(source)
+
+    document = parse_document(source, source.name, None)
+    elements = extract_elements(document)
+    assert document.tables and has_element(elements, "sample_size"), "表内样本量应被抽取"
+
+    items = load_checklist(ROOT / "checklists" / "quant-ai-v1.json")
+    strict = review_document(document, items, demote_on_figures=False)
+    conservative = review_document(document, items, demote_on_figures=True)
+
+    strict_r02 = [f for f in strict.findings if f.checklist_item_id == "R-02"][0]
+    conservative_r02 = [f for f in conservative.findings if f.checklist_item_id == "R-02"][0]
+
+    assert strict_r02.verdict == Verdict.PROBLEM
+    assert conservative_r02.verdict == Verdict.PROBLEM, "表格已解析且命中证据，不应降级"
+    assert conservative_r02.provenance.get("evidence_gate") != "figures_unparsed"

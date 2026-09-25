@@ -9,7 +9,7 @@
 | 第一次了解项目 | 根目录 `README.md` → `product/软件需求说明.md` → `competition/项目说明与答辩要点.md` |
 | 开发与联调 | `engineering/开发规范与开发顺序.md` → `engineering/API接口说明.md` → `evaluation/开发过程与验证记录.md` |
 | 测试与复核 | `evaluation/测试论文生成提示词.md` → `evaluation/blind-tests/` → `materials/03-测试报告.md` |
-| 部署与运维 | `operations/生产部署启动手册.md` → `operations/安全与运维核查清单.md` → `operations/生产上线待办清单.md` |
+| 部署与运维 | `operations/本地启动运行手册.md`（本机跑起来） → `operations/生产部署启动手册.md` → `operations/安全与运维核查清单.md` → `operations/生产上线待办清单.md` |
 | 答辩与提交 | `competition/竞赛硬性门槛与评分规则对齐.md` → `competition/项目说明与答辩要点.md` → `materials/00-材料总览.md` |
 
 ## 目录说明
@@ -23,6 +23,8 @@ docs/
 │   ├── 开发规范与开发顺序.md          # 怎么写、怎么拆任务
 │   └── API接口说明.md                 # 对外接口
 ├── operations/
+│   ├── 本地启动运行手册.md            # 本机前后端启动、配置、自测与排查
+│   ├── 生产部署启动手册.md            # 公网部署、TLS 与上线收口
 │   ├── 安全与运维核查清单.md          # 已实现控制点与运维核查
 │   └── 生产上线待办清单.md            # 8 项上线门禁与验收
 ├── evaluation/
@@ -51,3 +53,4 @@ docs/
 - 用户可以查看结构化审查报告，并下载 Markdown 审查报告。
 - 当前不生成、也不支持下载“已自动修改的论文 DOCX”；修改建议需要作者自行回到 Word 中落实。
 - 盲测报告是内部验证证据，不是用户论文的修改稿，也不是运行时生成的用户报告。
+- 解析能力边界：一期不解析公式与图片，表格按行并入 `paragraphs[]` 仅作上下文。**二期（`软件需求说明.md` §15.5）已全部落地**：表格结构化入 `tables[]` 并从 `paragraphs[]` 移出、OMML 公式文本提取、L1 图-文一致性（`R-FIG-01`）、内嵌图片落盘 + 视觉识读（`R-FIG-02`，结论为「存疑」）、追问支持多轮上下文（上限 10 轮 / 20 条 + 8000 字符）。

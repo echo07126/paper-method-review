@@ -53,8 +53,24 @@ check("模型输出严格校验", "LLMFindingPayload", "LLMFindingPayload" in re
 check("日志脱敏", "RedactionFilter", "RedactionFilter" in read(APP / "core" / "logging.py"))
 session_route = read(APP / "api" / "routes_session.py")
 check("删除：覆盖 DB + 临时文件", "purge_session + purge_session_files", "purge_session(" in session_route and "purge_session_files" in session_route)
-# 删除传播可验证：提供脚本并覆盖 DB 四张表 + 临时目录（对应上线待办第 4 项验收）
-check("删除传播可验证（脚本）", "backup_check.py 覆盖四张表 + 临时目录", (ROOT / "backend" / "scripts" / "backup_check.py").exists())
+# 删除传播可验证：提供脚本并覆盖 DB 五张表 + 临时目录（对应上线待办第 4 项验收）
+check("删除传播可验证（脚本）", "backup_check.py 覆盖五张表 + 临时目录", (ROOT / "backend" / "scripts" / "backup_check.py").exists())
+# 追问历史必须纳入删除链（需求 15.5.4 / 16.2：禁止绕过 purge_session 的残留数据）
+repo_full = read(APP / "storage" / "repository.py")
+check(
+    "追问历史纳入删除链",
+    "chat_messages 在 purge_session 与过期清理中均被清除",
+    "chat_messages" in repo_full
+    and "DELETE FROM chat_messages" in repo_full
+    and "DELETE FROM chat_messages" in read(APP / "storage" / "maintenance.py"),
+)
+# L3 图片落盘必须位于会话临时目录内（否则 purge_session_files 无法回收，形成退出删除链的残留）
+parser_src = read(APP / "parsers" / "docx_parser.py")
+check(
+    "图片落盘在会话临时目录内",
+    "media_dir 取上传件同级目录（随 purge_session_files 清除）",
+    "path.parent / f\"{path.stem}_media\"" in parser_src,
+)
 
 check("过期会话/临时文件自动清理", "定时/启动清理任务", bool(grep_files(APP, r"cleanup_expired|purge_expired")))
 # 运行期定期清理（不只是启动时一次）

@@ -7,7 +7,7 @@
 
 说明:
 - 本脚本使用隔离的临时数据库，不会触碰真实 ./data。
-- 删除传播验证：灌入会话 -> 上传件 + 结构化正文 -> purge -> 逐项断言四张表与该会话
+- 删除传播验证：灌入会话 -> 上传件 + 结构化正文 + 追问历史 -> purge -> 逐项断言五张表与该会话
   临时目录都为空。
 - 备份验证（--create-backup）：用 sqlite3 的 backup API 生成数据库快照，并校验快照可读、
   且快照内仍能查到该会话数据（证明备份侧需要独立的删除传播策略，见上线待办第 4 项）。
@@ -31,7 +31,7 @@ from app.storage.db import init_db  # noqa: E402
 from app.storage.files import purge_session_files, save_upload  # noqa: E402
 from app.storage.repository import Store  # noqa: E402
 
-TABLES = ("sessions", "documents", "reports", "jobs")
+TABLES = ("sessions", "documents", "reports", "jobs", "chat_messages")
 
 
 class IsolatedSettings(Settings):
@@ -89,6 +89,9 @@ def main() -> int:
         make_docx(sample)
         upload = save_upload(settings.temp_dir, session_id, sample.name, sample.read_bytes(), max_mb=50)
         document_id = store.save_document(session_id, sample.name, '{"source_name":"paper.docx","paragraphs":[]}')
+        # 追问历史（需求 15.5.4）：必须与其余会话数据一同被 purge 覆盖
+        store.append_chat_message(session_id, "rep_check", "user", "这条该怎么改？", keep=20)
+        store.append_chat_message(session_id, "rep_check", "assistant", "补充置信区间。", keep=20)
 
         before = count_rows(settings.db_path, session_id)
         print("删除传播验证 · 清理前")
@@ -111,7 +114,7 @@ def main() -> int:
             finally:
                 source.close()
 
-        # ---- 删除传播：purge 必须同时覆盖 DB 四张表与临时目录 ----
+        # ---- 删除传播：purge 必须同时覆盖 DB 五张表与临时目录 ----
         purge_session_files(settings.temp_dir, session_id)
         store.purge_session(session_id)
 
@@ -160,7 +163,7 @@ def main() -> int:
             print("  -", item)
         return 1
     print("BACKUP CHECK PASS")
-    print(" - 删除传播：sessions/documents/reports/jobs 四张表 + 临时目录均已清空")
+    print(" - 删除传播：sessions/documents/reports/jobs/chat_messages 五张表 + 临时目录均已清空")
     print(" - 隔离：真实 data/ 未被写入")
     return 0
 

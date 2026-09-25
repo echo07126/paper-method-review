@@ -69,6 +69,11 @@ def test_table_text_is_reviewed(tmp_path: Path) -> None:
 
     document = parse_document(source, source.name, None)
     assert document.meta.get("table_count") == 1
+    assert len(document.tables) == 1
+    table = document.tables[0]
+    assert table.n_rows == 2 and table.n_cols == 3
+    assert table.header_rows == 1, "首行无数字，应识别为表头"
+    assert table.rows[1][1] == "0.91"
     elements = extract_elements(document)
     assert has_element(elements, "p_value"), "表格中的 p 值应被抽取"
-    assert any(paragraph.style == "Table" for paragraph in document.paragraphs)
+    assert all(paragraph.style != "Table" for paragraph in document.paragraphs), "表格应移出段落流"

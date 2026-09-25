@@ -25,6 +25,7 @@ from pydantic_settings import SettingsConfigDict  # noqa: E402
 from app.core.config import Settings, set_settings_override  # noqa: E402
 from app.main import app  # noqa: E402
 from app.storage.db import init_db  # noqa: E402
+from app.storage.repository import Store  # noqa: E402
 
 
 class IsolatedSettings(Settings):
@@ -82,12 +83,24 @@ def main() -> int:
             exported = client.get(f"{prefix}/reports/{report_id}/export", params={"format": "markdown"})
             assert exported.status_code == 200 and "审查报告" in exported.text
 
+            # 追问多轮上下文（需求 15.5.4）：两轮提问应带回累积历史与 session_id
+            first = client.post(f"{prefix}/reports/{report_id}/chat", json={"question": "这条该怎么改？"})
+            assert first.status_code == 200, first.text
+            second = client.post(f"{prefix}/reports/{report_id}/chat", json={"question": "有推荐的写法吗？"})
+            assert second.status_code == 200, second.text
+            assert second.json()["session_id"], "响应应返回 session_id"
+            chat_session_id = second.json()["session_id"]
+            assert len(second.json()["history"]) == 4, "两轮追问应落库 4 条消息（2 轮 × user+assistant）"
+
             other = TestClient(app)
             forbidden = other.get(f"{prefix}/reports/{report_id}")
             assert forbidden.status_code == 404, f"越权未拦截: {forbidden.status_code}"
 
             purge = client.post(f"{prefix}/sessions/purge")
             assert purge.status_code == 200
+
+        # 删除传播：追问历史必须随会话一并清除（需求 15.5.4 / 16.2）
+        assert Store(settings.db_path).list_chat_messages(chat_session_id, report_id) == [], "purge 后仍有追问历史残留"
     finally:
         set_settings_override(None)
 
@@ -100,6 +113,7 @@ def main() -> int:
     print(" - health    :", health.json())
     print(" - upload    : paragraphs =", upload.json()["paragraph_count"], "warnings =", len(upload.json()["warnings"]))
     print(" - review    :", review.json()["counts"])
+    print(" - chat      : source =", second.json()["source"], "history =", len(second.json()["history"]))
     print(" - export    : length =", len(exported.text))
     print(" - 越权访问   : ->", forbidden.status_code)
     return 0
