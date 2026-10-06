@@ -12,16 +12,24 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (event: "close"): void }>();
 
-const messages = ref<ChatMessage[]>([]);
+type LocalMessage = ChatMessage & { key: number };
+
+const messages = ref<LocalMessage[]>([]);
 const input = ref("");
 const loading = ref(false);
 const error = ref("");
+const note = ref("");
 const truncated = ref(false);
 const scope = ref<"finding" | "fulltext">("finding");
 const body = ref<HTMLElement | null>(null);
 
 /** 会话数据被清理后，用本地上下文继续追问（服务端仅在落库为空时采用）。 */
 let localHistory: ChatMessage[] = [];
+let messageSeq = 0;
+
+function pushMessage(role: "user" | "assistant", content: string) {
+  messages.value.push({ role, content, key: ++messageSeq });
+}
 
 const isFulltext = computed(() => scope.value === "fulltext");
 
@@ -61,7 +69,8 @@ async function send() {
   if (!question || loading.value) return;
   input.value = "";
   error.value = "";
-  messages.value.push({ role: "user", content: question });
+  note.value = "";
+  pushMessage("user", question);
   loading.value = true;
   void scrollToBottom();
   try {
@@ -71,12 +80,15 @@ async function send() {
       finding_id: props.finding?.finding_id ?? null,
       history: localHistory,
     });
-    messages.value.push({ role: "assistant", content: data.answer });
+    pushMessage("assistant", data.answer);
     localHistory = data.history;
     truncated.value = data.truncated;
     scope.value = data.scope;
-    if (data.note) error.value = data.note;
+    if (data.note) note.value = data.note;
   } catch (err) {
+    // 请求失败：撤回乐观插入的提问并把内容还给输入框，避免留下无回复的孤立气泡
+    messages.value.pop();
+    input.value = question;
     error.value = (err as Error).message;
   } finally {
     loading.value = false;
@@ -95,26 +107,25 @@ function reset() {
   localHistory = [];
   truncated.value = false;
   error.value = "";
+  note.value = "";
   scope.value = props.finding ? "finding" : "fulltext";
   if (props.finding) {
-    messages.value.push({
-      role: "assistant",
-      content:
-        `已锁定「${props.finding.headline}」（段落 ${props.finding.anchors[0]?.paragraph_index ?? "-"}）。\n` +
+    pushMessage(
+      "assistant",
+      `已锁定「${props.finding.headline}」（段落 ${props.finding.anchors[0]?.paragraph_index ?? "-"}）。\n` +
         "接下来只围绕这条问题回答：为什么算问题、审稿人会怎么追问、怎么改才算达标。",
-    });
+    );
   } else {
-    messages.value.push({
-      role: "assistant",
-      content:
-        "已通读全文并在本会话内记住内容（全文将发送至模型服务商，仅用于本次问答、不作为训练数据）。\n" +
+    pushMessage(
+      "assistant",
+      "已通读全文并在本会话内记住内容（全文将发送至模型服务商，仅用于本次问答、不作为训练数据）。\n" +
         "可以直接问任意位置：方法学是否站得住、实验够不够、结论能否外推，也可以问这项研究还能往哪扩展。",
-    });
+    );
   }
 }
 
 watch(
-  () => [props.open, props.finding?.finding_id] as const,
+  () => [props.open, props.reportId, props.finding?.finding_id] as const,
   ([open]) => {
     if (!open) return;
     reset();
@@ -137,8 +148,8 @@ watch(
 
     <div ref="body" class="body">
       <div
-        v-for="(message, index) in messages"
-        :key="index"
+        v-for="message in messages"
+        :key="message.key"
         class="bubble"
         :class="message.role === 'user' ? 'q' : 'a'"
       >
@@ -160,6 +171,7 @@ watch(
     </div>
 
     <p v-if="truncated" class="hint">上下文已达上限（最近 10 轮 / 8000 字符），更早的对话已被截断。</p>
+    <p v-if="note" class="hint">{{ note }}</p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <form class="composer" @submit.prevent="send">

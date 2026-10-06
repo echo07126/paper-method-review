@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import client from "@/api/client";
+import client, { API_BASE } from "@/api/client";
 import type { DocumentResponse, Finding, ReviewReport, Table } from "@/api/types";
 import ChatDrawer from "@/components/ChatDrawer.vue";
 import FindingList from "@/components/FindingList.vue";
@@ -36,9 +36,12 @@ const topRisk = computed(() => {
 const loadError = ref("");
 const loading = ref(true);
 
-onMounted(async () => {
+async function loadReport() {
   loadError.value = "";
   loading.value = true;
+  report.value = null;
+  activeFinding.value = null;
+  filter.value = "all";
   const reportId = (route.params.id as string) || store.reportId;
   if (reportId) {
     try {
@@ -60,7 +63,16 @@ onMounted(async () => {
     }
   }
   loading.value = false;
-});
+}
+
+onMounted(loadReport);
+// 组件在 /report/A → /report/B 之间复用时不会重新挂载，必须监听路由参数手动重载
+watch(
+  () => route.params.id,
+  (id) => {
+    if (id) loadReport();
+  }
+);
 
 function selectFinding(finding: Finding) {
   activeFinding.value = finding;
@@ -84,7 +96,7 @@ function openFreeChat() {
 
 const severityFilters = computed(() => ({
   all: report.value?.findings.length ?? 0,
-  problem: report.value?.counts.total ?? 0,
+  problem: (report.value?.findings ?? []).filter((item) => item.verdict === "problem").length,
   high: report.value?.counts.high ?? 0,
   mid: report.value?.counts.mid ?? 0,
   low: report.value?.counts.low ?? 0,
@@ -98,14 +110,14 @@ const severityFilters = computed(() => ({
     <div class="toolbar">
       <div class="title">审查报告</div>
       <button class="chip high" :class="{ on: filter === 'problem' }" @click="filter = filter === 'problem' ? 'all' : 'problem'">
-        严重 {{ report.counts.high ?? 0 }}
+        问题 {{ severityFilters.problem }}
       </button>
       <button class="chip mid" @click="filter = filter === 'uncertain' ? 'all' : 'uncertain'">存疑 {{ report.counts.uncertain ?? 0 }}</button>
       <button class="chip low" :class="{ on: filter === 'pass' }" @click="filter = filter === 'pass' ? 'all' : 'pass'">
         通过 {{ report.counts.pass ?? 0 }}
       </button>
       <div class="toolbar-actions">
-        <a class="btn" :href="`/api/v1/reports/${report.report_id}/export?format=markdown`" target="_blank">导出 Markdown</a>
+        <a class="btn" :href="`${API_BASE}/reports/${report.report_id}/export?format=markdown`" target="_blank">导出 Markdown</a>
         <button class="btn" @click="openFreeChat">全文自由提问</button>
         <button class="btn primary" @click="goCompare">去修改对比 →</button>
       </div>
@@ -123,8 +135,8 @@ const severityFilters = computed(() => ({
         <span class="tiny">{{ topRisk ? `段落 ${topRisk.anchors[0]?.paragraph_index ?? "-"}` : "全部检查通过" }}</span>
       </div>
       <div class="stat card">
-        <span class="lbl">清单覆盖</span>
-        <span class="num">{{ report.counts.assessed ?? 0 }}/{{ report.findings.length }}</span>
+        <span class="lbl">已评估条目</span>
+        <span class="num">{{ report.counts.assessed ?? 0 }}</span>
         <span class="tiny">17 条清单 + 附加检查</span>
       </div>
       <div class="stat card">

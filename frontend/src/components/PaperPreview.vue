@@ -17,23 +17,22 @@ type Block = { kind: "para"; index: number; text: string } | { kind: "table"; ta
 
 // 表格已从正文段落流移出，按锚点（其前一段的序号）插回原文位置
 const blocks = computed<Block[]>(() => {
+  // 段落按序号升序后再插入表格，避免上游顺序异常时锚点错位
+  const paragraphs = [...props.paragraphs].sort((a, b) => a.index - b.index);
   const sorted = [...(props.tables ?? [])].sort(
     (a, b) => a.anchor.paragraph_index - b.anchor.paragraph_index,
   );
   const result: Block[] = [];
   let cursor = 0;
   for (const table of sorted) {
-    while (
-      cursor < props.paragraphs.length &&
-      props.paragraphs[cursor].index <= table.anchor.paragraph_index
-    ) {
-      const paragraph = props.paragraphs[cursor++];
+    while (cursor < paragraphs.length && paragraphs[cursor].index <= table.anchor.paragraph_index) {
+      const paragraph = paragraphs[cursor++];
       result.push({ kind: "para", index: paragraph.index, text: paragraph.text });
     }
     result.push({ kind: "table", table });
   }
-  while (cursor < props.paragraphs.length) {
-    const paragraph = props.paragraphs[cursor++];
+  while (cursor < paragraphs.length) {
+    const paragraph = paragraphs[cursor++];
     result.push({ kind: "para", index: paragraph.index, text: paragraph.text });
   }
   return result;
@@ -71,7 +70,10 @@ defineExpose({ scrollToParagraph: scrollToHighlight });
 
 <template>
   <div ref="paper" class="card paper" :style="minHeight ? { minHeight } : undefined">
-    <template v-for="(block, position) in blocks" :key="position">
+    <template
+      v-for="block in blocks"
+      :key="block.kind === 'para' ? `p-${block.index}` : `t-${block.table.id}`"
+    >
       <p
         v-if="block.kind === 'para'"
         :data-paragraph-index="block.index"

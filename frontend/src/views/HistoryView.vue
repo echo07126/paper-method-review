@@ -2,11 +2,13 @@
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
-import client from "@/api/client";
+import client, { API_BASE } from "@/api/client";
 import type { ReportSummary } from "@/api/types";
 import SeverityChip from "@/components/SeverityChip.vue";
+import { useSessionStore } from "@/stores/session";
 
 const router = useRouter();
+const store = useSessionStore();
 const reports = ref<ReportSummary[]>([]);
 const loading = ref(true);
 const error = ref("");
@@ -22,11 +24,13 @@ function time(iso: string): string {
 }
 
 function open(report: ReportSummary) {
+  store.setDocument(report.document_id);
+  store.setReport(report.report_id);
   router.push({ name: "report", params: { id: report.report_id } });
 }
 
 function exportReport(report: ReportSummary) {
-  window.open(`/api/v1/reports/${report.report_id}/export?format=markdown`, "_blank");
+  window.open(`${API_BASE}/reports/${report.report_id}/export?format=markdown`, "_blank");
 }
 
 function applyFilter() {

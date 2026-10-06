@@ -21,6 +21,10 @@ export const useSessionStore = defineStore("session", {
     setReport(reportId: string) {
       this.reportId = reportId;
     },
+    /** 打开历史报告时同步其所属文档，保证原文预览与报告一致。 */
+    setDocument(documentId: string) {
+      this.documentId = documentId;
+    },
     setTokens(tokensSummary: string) {
       this.tokensSummary = tokensSummary;
     },

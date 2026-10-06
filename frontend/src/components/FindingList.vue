@@ -46,6 +46,16 @@ watch(
   },
   { immediate: true },
 );
+
+// 清单内容变化（切换筛选/报告）后，若展开项已不在列表内则收起，避免残留展开态
+watch(
+  () => props.findings,
+  (list) => {
+    if (expanded.value && !list.some((item) => item.finding_id === expanded.value)) {
+      expanded.value = null;
+    }
+  },
+);
 </script>
 
 <template>
