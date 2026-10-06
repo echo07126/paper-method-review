@@ -42,7 +42,7 @@ class DeepSeekProvider:
         model: str,
         timeout_seconds: int = 60,
         max_retries: int = 3,
-        max_concurrency: int = 2,
+        max_concurrency: int = 4,
     ) -> None:
         if not api_key:
             raise LLMUnavailable("未配置 DEEPSEEK_API_KEY，无法进行模型判定。")

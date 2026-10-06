@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, File, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import get_store, resolve_session
 from app.core.config import get_settings
@@ -22,9 +23,22 @@ async def upload_document(request: Request, response: Response, file: UploadFile
     if len(content) > settings.max_upload_mb * 1024 * 1024:
         raise AppError("file_too_large", f"文件超过 {settings.max_upload_mb}MB 限制。", 413)
 
-    path: Path = save_upload(settings.temp_dir, session_id, file.filename or "upload.docx", content, settings.max_upload_mb)
-    document = parse_document(path, file.filename or path.name, file.content_type)
-    document_id = store.save_document(session_id, document.source_name, document.model_dump_json())
+    # 磁盘写入、python-docx 解析与 SQLite 写入都是同步阻塞操作，
+    # 一律放入线程池执行，避免顶住事件循环拖垮其他请求。
+    path: Path = await run_in_threadpool(
+        save_upload,
+        settings.temp_dir,
+        session_id,
+        file.filename or "upload.docx",
+        content,
+        settings.max_upload_mb,
+    )
+    document = await run_in_threadpool(parse_document, path, file.filename or path.name, file.content_type)
+
+    def _persist() -> str:
+        return store.save_document(session_id, document.source_name, document.model_dump_json())
+
+    document_id = await run_in_threadpool(_persist)
 
     return {
         "document_id": document_id,

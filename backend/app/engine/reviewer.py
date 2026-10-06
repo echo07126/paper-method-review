@@ -175,8 +175,20 @@ def _normalize_item_id(raw_id: str, items: list[ReviewItem]) -> str:
     return "unknown"
 
 
+def _prompt_document_text(document: DocumentIR) -> str:
+    """拼给模型的正文：段落 + 表体行。
+
+    P2-2 后表格已移出 `paragraphs`，规则引擎与引用核验都消费表体；模型侧必须一并带上，
+    否则「表内要素已纳入审查」的口径对模型不成立。
+    """
+    body = [paragraph.text for paragraph in document.paragraphs]
+    for table in document.tables:
+        body.extend(" | ".join(cell for cell in row if cell) for row in table.rows if any(cell for cell in row))
+    return "\n".join(body)[:MAX_PROMPT_CHARS]
+
+
 def _llm_findings(document: DocumentIR, items: list[ReviewItem], provider: LLMProvider) -> tuple[list[Finding], dict, int]:
-    text = "\n".join(paragraph.text for paragraph in document.paragraphs)[:MAX_PROMPT_CHARS]
+    text = _prompt_document_text(document)
     messages = build_review_prompt(items, text)
     result = provider.complete_structured(messages)
     raw = json.loads(result.content)

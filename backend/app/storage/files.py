@@ -2,7 +2,6 @@ import secrets
 import shutil
 from pathlib import Path
 
-from app.core.errors import AppError
 from app.core.config import get_settings
 from app.validators import validate_docx_container, validate_upload
 
@@ -25,9 +24,4 @@ def purge_session_files(temp_dir: str, session_id: str) -> None:
         shutil.rmtree(directory, ignore_errors=True)
 
 
-def assume_safe_path(temp_dir: str, path: Path) -> Path:
-    root = Path(temp_dir).resolve()
-    resolved = path.resolve()
-    if root not in resolved.parents and resolved != root:
-        raise AppError("invalid_path", "非法文件路径。", 400)
-    return resolved
+

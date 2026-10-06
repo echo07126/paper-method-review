@@ -53,6 +53,10 @@ def connect(db_path: str) -> sqlite3.Connection:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
+    # 并发取舍：WAL 让读不再阻塞写；busy_timeout 让写锁竞争时排队等待，
+    # 而不是直接抛 "database is locked"。均为连接级 PRAGMA，幂等。
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=5000")
     return connection
 
 
