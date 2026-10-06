@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-flash"
     llm_timeout_seconds: int = 60
     llm_max_retries: int = 3
-    llm_max_concurrency: int = 2
+    llm_max_concurrency: int = 4
     llm_default_enabled: bool = True
     llm_verify_enabled: bool = True
     llm_advisory_only: bool = True

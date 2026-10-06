@@ -29,13 +29,19 @@ def truncate_history(history: list[dict], max_turns: int, max_chars: int, system
         return [], bool(history)
     kept = history[-(max_turns * 2):] if history else []
     truncated = len(kept) < len(history)
+    # 从末尾按 2 条一截时，若历史条数为奇数会以 assistant 开头；回退一条使对话以 user 起始
+    if kept and kept[0].get("role") != "user":
+        kept = kept[1:]
+        truncated = True
 
     def total() -> int:
         return system_chars + sum(len(str(message.get("content", ""))) for message in kept)
 
     while kept and total() > max_chars:
-        drop = 2 if len(kept) > 2 else 1
-        kept = kept[drop:]
+        if len(kept) <= 1:
+            # 单条最新消息本身即超限时仍保留，确保最新上下文不丢
+            break
+        kept = kept[2:]  # 整轮（user+assistant）丢弃，避免留下孤立消息
         truncated = True
     return kept, truncated
 

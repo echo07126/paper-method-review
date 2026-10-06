@@ -49,6 +49,9 @@ def cleanup_expired(db_path: str, temp_dir: str, retention_hours: int | None = N
         rows = connection.execute("SELECT id FROM sessions WHERE expires_at < ? OR created_at < ?", (now.isoformat(), cutoff)).fetchall()
         expired_ids = [row["id"] for row in rows]
         _purge_session_rows(connection, expired_ids)
+        # 兜底自愈：清理任何已无对应会话的残留行（覆盖并发写入竞态产生的孤儿数据）
+        for table in ("chat_messages", "reports", "documents", "jobs"):
+            connection.execute(f"DELETE FROM {table} WHERE session_id NOT IN (SELECT id FROM sessions)")
         connection.commit()
     finally:
         connection.close()

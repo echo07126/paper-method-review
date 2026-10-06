@@ -55,7 +55,6 @@ def revise_report(report_id: str, request: Request, response: Response) -> dict:
     settings = get_settings()
     store = get_store()
     session_id = resolve_session(request, response, store)
-    ReportSummary  # noqa: B018  (保持导入用于类型提示)
     store.authorized_report(session_id, report_id)
     document_id = store.report_document_id(session_id, report_id)
     document = DocumentIR(**store.authorized_document(session_id, document_id))

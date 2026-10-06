@@ -4,7 +4,6 @@ from app.core.config import Settings, get_settings
 from app.storage.repository import Store
 
 SESSION_COOKIE = "pm_session"
-COOKIE_SECURE = True
 
 
 def get_store() -> Store:

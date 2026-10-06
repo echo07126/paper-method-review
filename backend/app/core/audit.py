@@ -1,7 +1,15 @@
 """审计日志：只记录事件与元数据，不记录论文内容。"""
 from app.core.logging import safe_logger
 
-AUDIT_EVENTS = {"session_purge", "report_export", "review_created", "startup_cleanup"}
+AUDIT_EVENTS = {
+    "session_purge",
+    "report_export",
+    "report_revised",
+    "review_created",
+    "chat_ask",
+    "compare_autorevised",
+    "startup_cleanup",
+}
 
 
 def audit(event: str, **fields) -> None:

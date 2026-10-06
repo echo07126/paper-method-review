@@ -85,7 +85,12 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def attach_request_id(request: Request, call_next):
         request.state.request_id = uuid.uuid4().hex[:12]
-        enforce_rate_limit(request)
+        try:
+            enforce_rate_limit(request)
+        except AppError as exc:
+            # 中间件抛出的异常不会进入 AppError 处理器（会被外层 ServerErrorMiddleware 归为 500），
+            # 这里就地复用处理器返回一致的 429 响应体。
+            return await app_error_handler(request, exc)
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response

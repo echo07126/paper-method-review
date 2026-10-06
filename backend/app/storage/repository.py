@@ -149,6 +149,9 @@ class Store:
         """
         connection = connect(self.db_path)
         try:
+            # 会话可能已被 purge：此时拒绝写入，避免产生永不清理的残留消息
+            if connection.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
+                return
             connection.execute(
                 "INSERT INTO chat_messages (id, session_id, report_id, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (new_id("msg"), session_id, report_id, role, content, _now().isoformat()),
