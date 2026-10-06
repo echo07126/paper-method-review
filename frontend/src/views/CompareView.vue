@@ -94,6 +94,11 @@ watch(afterId, () => {
   if (afterId.value) void loadPapers(null);
 });
 
+// 切换初稿时同步刷新左侧原文，避免原文与所选报告不一致
+watch(beforeId, () => {
+  if (beforeId.value) void loadPapers(null);
+});
+
 async function compare() {
   error.value = "";
   if (!beforeId.value) {
@@ -104,6 +109,8 @@ async function compare() {
   loadingStage.value = afterId.value
     ? "正在对比两份报告…"
     : "正在生成修改稿并二次审查（约 1 分钟）…";
+  // 记录提交前已有的报告 id：二次审查会新建报告，据此识别新生成的那份
+  const knownIds = new Set(reports.value.map((item) => item.report_id));
   try {
     const { data } = await client.post<CompareResponse>("/compare", {
       before_report_id: beforeId.value,
@@ -118,17 +125,14 @@ async function compare() {
       const list = await client.get<ReportSummary[]>("/reports");
       reports.value = list.data;
       store.setReports(list.data);
-      const generated = list.data.find((item) => item.document_name !== null && item.report_id !== beforeId.value);
-      afterId.value = data.after_findings.length || !generated ? afterId.value : generated.report_id;
-      const docMeta =
-        generated ??
-        list.data.find((item) => item.report_id === afterId.value) ??
-        null;
-      if (docMeta?.report_id) {
-        const detail = await client.get<ReviewReport>(`/reports/${docMeta.report_id}`);
+      // 认「提交前不存在的那份报告」为新生成结果，避免多份历史时误选旧报告
+      const generated = list.data.find((item) => !knownIds.has(item.report_id)) ?? null;
+      if (generated) {
+        afterId.value = generated.report_id;
+        const detail = await client.get<ReviewReport>(`/reports/${generated.report_id}`);
         revisedReport.value = detail.data;
+        afterParagraphs.value = await documentParagraphs(generated.document_id);
       }
-      afterParagraphs.value = docMeta ? await documentParagraphs(docMeta.document_id) : [];
     } else {
       revisedReport.value = null;
       await loadPapers(null);

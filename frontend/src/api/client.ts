@@ -1,7 +1,10 @@
 import axios from "axios";
 
+/** 接口前缀：导出等需要浏览器直接跳转的链接据此拼接，避免各处硬编码 /api/v1。 */
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE ?? "/api/v1",
+  baseURL: API_BASE,
   withCredentials: true,
   timeout: 120000,
 });
