@@ -102,7 +102,7 @@ paper-method-review/
 │   │   ├── parsers/             # DOCX 解析与 Parser 注册表
 │   │   ├── reports/             # Markdown 导出
 │   │   └── storage/             # SQLite、文件与会话维护
-│   ├── scripts/                 # 24 个活动工具
+│   ├── scripts/                 # 25 个活动工具
 │   │   └── archive/             # 50 个已完成使命的一次性脚本
 │   ├── tests/                   # pytest
 │   ├── Dockerfile
