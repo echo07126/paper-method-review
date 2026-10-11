@@ -14,6 +14,7 @@ from app.api import (
     routes_report,
     routes_review,
     routes_session,
+    routes_tasks,
     routes_upload,
 )
 from app.core.config import get_settings
@@ -23,6 +24,7 @@ from app.core.ratelimit import enforce as enforce_rate_limit
 from app.storage.cleanup_task import CLEANUP_INTERVAL_SECONDS, periodic_cleanup
 from app.storage.db import init_db
 from app.storage.maintenance import cleanup_expired
+from app.tasks import shutdown_executor
 
 
 @asynccontextmanager
@@ -62,6 +64,8 @@ async def lifespan(app: FastAPI):
             await cleanup_task
         except asyncio.CancelledError:
             pass
+        # 停止接收新任务；已在跑的任务交由池内线程收尾（不阻塞进程退出）
+        shutdown_executor()
 
 
 def create_app() -> FastAPI:
@@ -107,6 +111,7 @@ def create_app() -> FastAPI:
         routes_report.router,
         routes_chat.router,
         routes_compare.router,
+        routes_tasks.router,
         routes_session.router,
     ):
         app.include_router(router, prefix=prefix)

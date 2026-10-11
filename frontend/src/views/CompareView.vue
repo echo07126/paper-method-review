@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import client from "@/api/client";
+import { submitAndPoll } from "@/api/tasks";
 import type { CompareFinding, CompareResponse, DocumentResponse, ReviewReport, ReportSummary } from "@/api/types";
 import PaperPreview from "@/components/PaperPreview.vue";
 import SeverityChip from "@/components/SeverityChip.vue";
@@ -80,9 +81,13 @@ onMounted(async () => {
     store.setReports(data);
     beforeId.value =
       (route.query.before as string) || store.reportId || data[0]?.report_id || "";
-    afterId.value = data.find((item) => item.report_id !== beforeId.value)?.report_id ?? "";
+    // 默认不预选「修改后」报告：留空即走「按示范改写自动生成修改稿并二次审查」这条主线，
+    // 否则页面会拿两份既有（均未修改）报告互比，看起来「改了却没变化」。
+    // 确需比较两份既有报告时，由用户在下拉框手动选择。
+    afterId.value = "";
     await loadPapers(null);
-    await compare();
+    // 不在进入页面时自动跑对比：生成修改稿要连跑一次完整审查（含模型定向送审与视觉识读），
+    // 自动触发会让「打开对比页」变成一次重模型任务，误入即长时间占用。改为由用户点按钮触发。
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
@@ -94,9 +99,11 @@ watch(afterId, () => {
   if (afterId.value) void loadPapers(null);
 });
 
-// 切换初稿时同步刷新左侧原文，避免原文与所选报告不一致
+// 切换初稿时同步刷新左侧原文，并清掉上一份初稿生成的修改稿选择，避免错配
 watch(beforeId, () => {
-  if (beforeId.value) void loadPapers(null);
+  if (!beforeId.value) return;
+  if (afterId.value) afterId.value = "";
+  void loadPapers(null);
 });
 
 async function compare() {
@@ -108,11 +115,12 @@ async function compare() {
   loading.value = true;
   loadingStage.value = afterId.value
     ? "正在对比两份报告…"
-    : "正在生成修改稿并二次审查（约 1 分钟）…";
+    : "已提交修改稿生成任务（约 1–3 分钟，本页自动轮询结果）…";
   // 记录提交前已有的报告 id：二次审查会新建报告，据此识别新生成的那份
   const knownIds = new Set(reports.value.map((item) => item.report_id));
   try {
-    const { data } = await client.post<CompareResponse>("/compare", {
+    // 对比为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取结果，不再挂长连接。
+    const data = await submitAndPoll<CompareResponse>("/compare", {
       before_report_id: beforeId.value,
       after_report_id: afterId.value || null,
       use_llm: afterId.value ? false : useLlm.value,
@@ -186,8 +194,10 @@ function statusLabel(status?: string): string {
         修改稿问题 {{ delta.afterTotal }} 项
       </span>
       <div class="toolbar-actions">
-        <button class="btn" :disabled="loading" @click="compare">{{ loading ? "处理中…" : "重新对比" }}</button>
-        <button class="btn primary" @click="$router.push({ name: 'report', params: { id: afterId || beforeId } })">回到报告</button>
+        <button class="btn primary" :disabled="loading" @click="compare">
+          {{ loading ? "处理中…" : result ? "重新对比" : "生成修改稿并对比" }}
+        </button>
+        <button class="btn" @click="$router.push({ name: 'report', params: { id: afterId || beforeId } })">回到报告</button>
       </div>
     </div>
 
@@ -311,7 +321,9 @@ function statusLabel(status?: string): string {
       </div>
     </div>
 
-    <p v-else-if="!loading && !error" class="tiny empty-state">选择初稿报告后点击「重新对比」，即可生成修改稿并二次审查。</p>
+    <p v-else-if="!loading && !error" class="tiny empty-state">
+      确认左侧初稿报告后，点右上角「生成修改稿并对比」：系统会现场补写修改稿并对修改稿做一次真实二次审查（作为后台任务提交，本页自动轮询结果，约 1–3 分钟；想秒级出结果可取消勾选上面的模型选框）。
+    </p>
   </div>
 </template>
 

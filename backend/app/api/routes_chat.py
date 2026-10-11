@@ -7,7 +7,8 @@ from app.core.config import get_settings
 from app.engine.chat_history import build_chat_messages
 from app.engine.llm_provider import LLMUnavailable, build_provider
 from app.engine.qa_context import build_question_context, build_qa_system_message
-from app.models.schemas import ChatMessage, ChatResponse, DocumentIR, ReviewReport
+from app.models.schemas import ChatMessage, DocumentIR, ReviewReport, TaskAccepted
+from app.tasks import submit
 
 router = APIRouter(tags=["chat"])
 
@@ -80,11 +81,16 @@ def _build_question(report: ReviewReport, finding_id: str | None, question: str,
     )
 
 
-@router.post("/reports/{report_id}/chat", response_model=ChatResponse)
+@router.post("/reports/{report_id}/chat", response_model=TaskAccepted, status_code=202)
 def chat(report_id: str, payload: ChatRequest, request: Request, response: Response) -> dict:
-    settings = get_settings()
+    """提交论文问答任务（追问单条 / 全文自由提问）：立即 202，业务主体在任务线程池执行。
+
+    全文自由提问需注入全文与多轮历史，模型耗时可能超过默认前端超时，故一并任务化。
+    前端轮询 /tasks/{id} 取 ChatResponse。
+    """
     store = get_store()
     session_id = resolve_session(request, response, store)
+    # 快速失败校验：越权/不存在仍在 202 之前返回 404
     report = ReviewReport(**store.authorized_report(session_id, report_id))
 
     document: DocumentIR | None = None
@@ -92,55 +98,67 @@ def chat(report_id: str, payload: ChatRequest, request: Request, response: Respo
         # 报告本身不存 document_id，需按会话条件另取一次（仍强制会话隔离，越权即 404）
         document_id = store.report_document_id(session_id, report_id)
         document = DocumentIR(**store.authorized_document(session_id, document_id))
-    question, fulltext_mode = _build_question(
-        report, payload.finding_id, payload.question, _document_text(document) if document else ""
-    )
 
-    keep = settings.chat_history_max_turns * 2
-    stored = store.list_chat_messages(session_id, report_id)
-    if not stored and payload.history:
-        stored = [message.model_dump() for message in payload.history]
-
-    history, truncated = build_chat_messages(
-        stored,
-        question,
-        max_turns=settings.chat_history_max_turns,
-        max_chars=settings.chat_history_max_chars,
-    )
-    if fulltext_mode:
-        history[0] = build_qa_system_message()
-
-    provider = build_provider(settings)
-    if provider is None:
-        answer, source, tokens, note = (
-            FALLBACK_FULLTEXT_TEMPLATE if fulltext_mode else FALLBACK_TEMPLATE,
-            "fallback",
-            None,
-            "未配置模型服务，已使用规则模板回复（FR-D5）。",
+    def _run() -> dict:
+        settings = get_settings()
+        store = get_store()
+        question, fulltext_mode = _build_question(
+            report, payload.finding_id, payload.question, _document_text(document) if document else ""
         )
-    else:
-        try:
-            result = provider.complete_text(history)
-            answer, source, tokens, note = result.content, "llm", result.tokens, None
-        except LLMUnavailable as exc:
+
+        keep = settings.chat_history_max_turns * 2
+        stored = store.list_chat_messages(session_id, report_id)
+        if not stored and payload.history:
+            stored = [message.model_dump() for message in payload.history]
+
+        history, truncated = build_chat_messages(
+            stored,
+            question,
+            max_turns=settings.chat_history_max_turns,
+            max_chars=settings.chat_history_max_chars,
+        )
+        if fulltext_mode:
+            history[0] = build_qa_system_message()
+
+        provider = build_provider(settings)
+        if provider is None:
             answer, source, tokens, note = (
                 FALLBACK_FULLTEXT_TEMPLATE if fulltext_mode else FALLBACK_TEMPLATE,
                 "fallback",
                 None,
-                f"模型暂不可用：{exc}",
+                "未配置模型服务，已使用规则模板回复（FR-D5）。",
             )
+        else:
+            try:
+                result = provider.complete_text(history)
+                answer, source, tokens, note = result.content, "llm", result.tokens, None
+            except LLMUnavailable as exc:
+                answer, source, tokens, note = (
+                    FALLBACK_FULLTEXT_TEMPLATE if fulltext_mode else FALLBACK_TEMPLATE,
+                    "fallback",
+                    None,
+                    f"模型暂不可用：{exc}",
+                )
 
-    audit("chat_ask", report_id=report_id, scope="fulltext" if fulltext_mode else "finding", source=source)
-    store.append_chat_message(session_id, report_id, "user", payload.question, keep)
-    store.append_chat_message(session_id, report_id, "assistant", answer, keep)
+        audit("chat_ask", report_id=report_id, scope="fulltext" if fulltext_mode else "finding", source=source)
+        store.append_chat_message(session_id, report_id, "user", payload.question, keep)
+        store.append_chat_message(session_id, report_id, "assistant", answer, keep)
 
-    return {
-        "answer": answer,
-        "source": source,
-        "tokens": tokens,
-        "note": note,
-        "session_id": session_id,
-        "history": store.list_chat_messages(session_id, report_id),
-        "truncated": truncated,
-        "scope": "fulltext" if fulltext_mode else "finding",
-    }
+        return {
+            "answer": answer,
+            "source": source,
+            "tokens": tokens,
+            "note": note,
+            "session_id": session_id,
+            "history": store.list_chat_messages(session_id, report_id),
+            "truncated": truncated,
+            "scope": "fulltext" if fulltext_mode else "finding",
+        }
+
+    job_id = submit(
+        "chat",
+        session_id,
+        {"report_id": report_id, "finding_id": payload.finding_id},
+        _run,
+    )
+    return {"task_id": job_id, "state": "queued", "kind": "chat", "poll_url": f"/tasks/{job_id}"}

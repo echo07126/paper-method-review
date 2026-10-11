@@ -32,11 +32,20 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = 4
     llm_default_enabled: bool = True
     llm_verify_enabled: bool = True
-    llm_advisory_only: bool = True
+    # 全局顾问模式（安全阀）：开启后**所有**模型结论一律降级为「建议/存疑」。
+    # 默认关闭——判定权按清单条目的 judge 字段分权：advisory 档在 reviewer 内单独降级，
+    # llm 档允许模型主导（仍须过证据门：无锚点结论照旧降级）。
+    llm_advisory_only: bool = False
+    # 高级应用：按要素定向送审（每条清单只带相关原文片段）+ 双模型互证（同题两跑比对分歧）
+    llm_directed_review: bool = True
+    llm_dual_check: bool = False
     demote_on_figures: bool = False
     rate_limit_uploads_per_minute: int = 20
     rate_limit_reviews_per_minute: int = 10
     rate_limit_reads_per_minute: int = 120
+    # 重接口任务队列（POST 立即 202 + 前端轮询 /tasks/{id}）：线程池并发上限与终态任务保留期
+    task_max_workers: int = 2
+    task_retention_minutes: int = 30
     llm_verify_max_items: int = 6
     # L3 图像内容识读（P2-3）：按图片计费，需显式开启并限制张数
     llm_vision_enabled: bool = True

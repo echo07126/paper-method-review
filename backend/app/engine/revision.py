@@ -12,7 +12,7 @@ import re
 
 from app.core.logging import safe_logger
 from app.engine.llm_provider import LLMProvider, LLMUnavailable
-from app.engine.prompts import REVISION_INSTRUCTION, SYSTEM_GUARD
+from app.engine.prompts import REVISION_INSTRUCTION, SYSTEM_GUARD, limit_prompt_text
 from app.engine.reviewer import review_document
 from app.models.schemas import DocumentIR, Finding, ReviewReport, Sentence, Verdict
 
@@ -64,7 +64,8 @@ def _document_blocks(document: DocumentIR) -> str:
             rows = "\n".join(" | ".join(cell or "" for cell in row) for row in table.rows)
             caption = f"[表] {table.caption}\n" if table.caption else "[表]\n"
             lines.append(f"[P{paragraph.index}] {caption}{rows}")
-    return "\n".join(lines)
+    # 与审查链路共用同一正文预算，避免补写链路看到比判定链路更多的正文（截断不对称）。
+    return limit_prompt_text("\n".join(lines))
 
 
 def _quote_exists(document: DocumentIR, quote: str) -> bool:
@@ -300,16 +301,22 @@ def review_and_compare(
     use_llm: bool = False,
     demote_on_figures: bool | None = None,
     media_root=None,
+    before: ReviewReport | None = None,
 ) -> tuple[ReviewReport, ReviewReport, DocumentIR, dict[str, tuple[str, str]]]:
-    """一次跑完：初稿审查 → 生成修改稿 → 修改稿二次审查。"""
-    before = review_document(
-        document,
-        items,
-        provider=provider,
-        use_llm=use_llm,
-        demote_on_figures=demote_on_figures,
-        media_root=media_root,
-    )
+    """一次跑完：初稿审查 → 生成修改稿 → 修改稿二次审查。
+
+    `before` 已给定时直接复用，不再重跑初稿审查——对比链路通常已从存储取回初稿报告，
+    复用它可省掉一次完整审查（含视觉识读与定向送审）的模型开销。
+    """
+    if before is None:
+        before = review_document(
+            document,
+            items,
+            provider=provider,
+            use_llm=use_llm,
+            demote_on_figures=demote_on_figures,
+            media_root=media_root,
+        )
     revised, status = build_revised_document(
         document, before.findings, provider=provider if use_llm else None
     )

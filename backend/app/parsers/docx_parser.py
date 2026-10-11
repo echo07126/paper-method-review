@@ -22,7 +22,9 @@ from app.models.schemas import (
 from app.parsers.base import ParseError, ParserCapabilities
 
 REFERENCE_TITLES = {"references", "bibliography", "参考文献", "文献", "references and notes"}
-SENTENCE_SPLIT = re.compile(r"(?<=[。！？.!?])\s+")
+# 中文断句：中文终止符（。！？；）后直接断句，无需空白；西文 .!? 仅在“非数字 + 后接空白 + 下一句以大写/CJK 起”时断句，
+# 既修掉“中文段落永不切句”（原正则要求终止符后必须有空白），也避免把 “2. 方法”“0.912” 切成独立句。
+SENTENCE_SPLIT = re.compile(r"(?<=[。！？；])|(?<![0-9][.?!])(?<=[.?!])\s+(?=[A-Z\u4e00-\u9fff“\"'(])")
 BRACKET_TOKEN = re.compile(r"\[[^\[\]]+\]")
 RANGE_OR_NUMBER = re.compile(r"\d+(?:\s*[-–—]\s*\d+)?")
 REFERENCE_ITEM = re.compile(r"^\s*\[?(\d+)\]?[\.\、\．\:\)]?\s+")
@@ -237,6 +239,20 @@ def _image_caption(paragraphs: list[Paragraph], anchor_index: int) -> tuple[str,
     return "", None
 
 
+def _nearest_paragraph_index(paragraphs: list[Paragraph], block_index: int) -> int:
+    """把「原始块序号」映射到实际存在的段落序号。
+
+    纯图片、以图片嵌入的公式、空段不产出 ``Paragraph``（无文本被跳过），但仍占用块序号。
+    若直接用块序号作锚点，前端按 ``paragraph_index`` 定位时会找不到该段落（无法高亮/定位）。
+    故锚到最近的前一个正文段；没有前序段时退回第一个正文段（与表格锚到其前一段的口径一致）。
+    """
+    kept = [paragraph.index for paragraph in paragraphs]
+    if not kept:
+        return 0
+    preceding = [index for index in kept if index <= block_index]
+    return max(preceding) if preceding else min(kept)
+
+
 def _save_images(document, path: Path, pending: list[tuple[str, int]], paragraphs: list[Paragraph]) -> list[ImageRef]:
     """把内嵌图片落盘到会话目录下的 `<docx名>_media/`，并返回带锚点的 ImageRef。
 
@@ -246,7 +262,7 @@ def _save_images(document, path: Path, pending: list[tuple[str, int]], paragraph
         return []
     media_dir = path.parent / f"{path.stem}_media"
     images: list[ImageRef] = []
-    for rel_id, anchor_index in pending:
+    for rel_id, block_index in pending:
         part = document.part.related_parts.get(rel_id)
         blob = getattr(part, "blob", b"") if part is not None else b""
         if not blob:
@@ -255,7 +271,9 @@ def _save_images(document, path: Path, pending: list[tuple[str, int]], paragraph
         filename = f"fig{len(images) + 1}.{CONTENT_TYPE_EXT.get(media_type, 'bin')}"
         media_dir.mkdir(parents=True, exist_ok=True)
         (media_dir / filename).write_bytes(blob)
-        caption, caption_index = _image_caption(paragraphs, anchor_index)
+        # 题注搜索按原始块序号（保持既有口径）；锚点则映射到真实存在的段落序号，
+        # 避免落到被跳过的空文本段上导致前端无法定位/高亮。
+        caption, caption_index = _image_caption(paragraphs, block_index)
         images.append(
             ImageRef(
                 id=new_id("img"),
@@ -265,7 +283,7 @@ def _save_images(document, path: Path, pending: list[tuple[str, int]], paragraph
                 filename=f"{media_dir.name}/{filename}",
                 caption=caption,
                 caption_index=caption_index,
-                anchor=Anchor(paragraph_index=anchor_index),
+                anchor=Anchor(paragraph_index=_nearest_paragraph_index(paragraphs, block_index)),
             )
         )
     return images

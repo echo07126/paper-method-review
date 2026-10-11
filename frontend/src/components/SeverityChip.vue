@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Severity } from "@/api/types";
 
-const props = defineProps<{ severity: Severity | "uncertain" | "pass" }>();
-const labels: Record<string, string> = { high: "严重", mid: "中等", low: "轻微", uncertain: "存疑", pass: "通过" };
+const props = defineProps<{ severity: Severity | "uncertain" | "pass" | "undetermined" }>();
+const labels: Record<string, string> = { high: "严重", mid: "中等", low: "轻微", uncertain: "存疑", pass: "通过", undetermined: "未判定" };
 </script>
 
 <template>
@@ -16,4 +16,5 @@ const labels: Record<string, string> = { high: "严重", mid: "中等", low: "�
 .chip.low { background: var(--sev-low-bg); color: var(--sev-low); }
 .chip.uncertain { background: var(--bg); color: var(--ink-2); border: 1px dashed var(--ink-3); }
 .chip.pass { background: var(--pass-bg); color: var(--pass); }
+.chip.undetermined { background: var(--bg); color: var(--ink-3); border: 1px solid var(--line); }
 </style>

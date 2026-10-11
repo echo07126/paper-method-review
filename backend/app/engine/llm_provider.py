@@ -13,6 +13,26 @@ class LLMUnavailable(RuntimeError):
     pass
 
 
+_SEMAPHORE_LOCK = threading.Lock()
+_SEMAPHORES: dict[int, threading.BoundedSemaphore] = {}
+
+
+def _semaphore_for(limit: int) -> threading.BoundedSemaphore:
+    """按上限取进程内**共享**的信号量。
+
+    `build_provider()` 每个请求都会新建 provider 实例，若信号量挂在实例上，
+    `LLM_MAX_CONCURRENCY` 就退化成「单请求并发上限」——多个重接口（审查 / 修改稿 /
+    对比）并发时会各自开满，一起冲同一账户配额触发限流与退避重试，表现为整体卡顿。
+    这里改为进程内共享，使配置口径（全局并发上限）与实际一致。
+    """
+    with _SEMAPHORE_LOCK:
+        semaphore = _SEMAPHORES.get(limit)
+        if semaphore is None:
+            semaphore = threading.BoundedSemaphore(limit)
+            _SEMAPHORES[limit] = semaphore
+        return semaphore
+
+
 @dataclass
 class LLMResult:
     content: str
@@ -51,7 +71,7 @@ class DeepSeekProvider:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
-        self._semaphore = threading.BoundedSemaphore(max_concurrency)
+        self._semaphore = _semaphore_for(max_concurrency)
 
     def _post(self, payload: dict) -> tuple[dict, str]:
         with self._semaphore:

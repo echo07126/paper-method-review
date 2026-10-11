@@ -14,6 +14,8 @@ venv/
 # --- P0 合规：禁止入库的材料 ---
 # 用户提供的原始论文（非开放许可）及其衍生产物
 samples/real/raw/
+# 由用户论文复制而来的盲测件（同样不得入库；本地由 samples/real/raw/ 生成，CI 不依赖）
+samples/real/blind-*.docx
 # 从用户论文中抽取的插图（派生于原始论文，同样不得入库）
 samples/real/*_media/
 # 评测样本目录下任何随审查生成的媒体落盘产物
@@ -34,6 +36,9 @@ node_modules/
 dist/
 *.timestamp-*.mjs
 .vite/
+
+# 交付打包产物
+release/
 
 # 编辑器与系统
 .idea/

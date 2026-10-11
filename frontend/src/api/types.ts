@@ -1,4 +1,8 @@
 export type Severity = "high" | "mid" | "low";
+/** 确定性等级：与 severity 正交，衡量结论的可靠程度 */
+export type Certainty = "deterministic" | "suspected" | "undetermined";
+/** 输出质量分档：A 高置信 / B 中置信 / C 低置信 / D 待确认 */
+export type Grade = "A" | "B" | "C" | "D";
 export type Verdict = "pass" | "problem" | "not_applicable" | "uncertain";
 
 export interface Section {
@@ -18,12 +22,26 @@ export interface Finding {
   checklist_item_id: string;
   verdict: Verdict;
   severity: Severity;
+  certainty?: Certainty;
   headline: string;
   description?: string;
   suggestion?: string;
   anchors: Anchor[];
   evidence_elements?: string[];
   provenance?: Record<string, unknown>;
+  /** 输出质量：0–1 连续置信度与 A/B/C/D 分档 */
+  confidence?: number;
+  grade?: Grade;
+}
+
+/** 质量卡：分级分布、门控分布、平均置信度与审查率 */
+export interface ReportQuality {
+  grades?: Record<string, number>;
+  gate_reasons?: Record<string, number>;
+  avg_confidence?: number;
+  assessed_items?: number;
+  applicable_items?: number;
+  review_rate?: number;
 }
 
 export interface ReviewReport {
@@ -38,6 +56,7 @@ export interface ReviewReport {
   figure_references: number;
   demote_on_figures: boolean;
   paper_type: string;
+  quality?: ReportQuality;
 }
 
 export interface UploadResponse {
@@ -65,6 +84,7 @@ export interface ReviewCreateResponse {
   figure_references: number;
   demote_on_figures: boolean;
   paper_type: string;
+  quality?: ReportQuality;
 }
 
 export interface ReportSummary {
@@ -100,6 +120,7 @@ export interface CompareFinding {
   checklist_item_id: string;
   headline: string;
   severity: Severity;
+  certainty?: Certainty;
   verdict: Verdict;
   anchors: Anchor[];
   description?: string;
@@ -143,4 +164,24 @@ export interface ChatResponse {
   truncated: boolean;
   /** finding = 针对某条审查问题；fulltext = 基于全文的自由提问 */
   scope: "finding" | "fulltext";
+}
+
+/** 重接口入队响应（HTTP 202）：轮询 poll_url 取任务结果 */
+export interface TaskAccepted {
+  task_id: string;
+  state: string;
+  kind: string;
+  /** 相对 API 前缀（/api/v1）的轮询路径，如 /tasks/job_xxx */
+  poll_url: string;
+}
+
+/** 任务状态：succeeded 时 result 为旧同步响应体；failed 时 error 带 code/message */
+export interface TaskStatusResponse<T = Record<string, unknown>> {
+  task_id: string;
+  kind: string;
+  state: string;
+  result: T | null;
+  error: { code: string; message: string } | null;
+  created_at: string;
+  updated_at: string;
 }

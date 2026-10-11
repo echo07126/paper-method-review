@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 
-import client from "@/api/client";
+import { submitAndPoll } from "@/api/tasks";
 import type { ChatMessage, ChatResponse, Finding } from "@/api/types";
 
 const props = defineProps<{
@@ -74,7 +74,8 @@ async function send() {
   loading.value = true;
   void scrollToBottom();
   try {
-    const { data } = await client.post<ChatResponse>(`/reports/${props.reportId}/chat`, {
+    // 问答为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取回答。
+    const data = await submitAndPoll<ChatResponse>(`/reports/${props.reportId}/chat`, {
       question: contextualQuestion(question),
       // 自由提问不绑定单条 finding，后端据此注入全文并记忆上下文
       finding_id: props.finding?.finding_id ?? null,

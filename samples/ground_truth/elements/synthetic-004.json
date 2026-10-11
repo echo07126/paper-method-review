@@ -1,0 +1,8 @@
+{
+  "sample_id": "synthetic-004",
+  "level": "document",
+  "rule": "要素在论文（或所给节选）中被实质性报告/使用即标注为存在；仅作为通用术语一掠而过（如泛指概念的「训练集」）不计入。",
+  "annotator": "single-pass",
+  "date": "2026-10-10",
+  "elements": ["sample_size", "study_design", "metric", "baseline", "p_value", "novel_module", "conclusion"]
+}

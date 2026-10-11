@@ -53,7 +53,7 @@ check("模型输出严格校验", "LLMFindingPayload", "LLMFindingPayload" in re
 check("日志脱敏", "RedactionFilter", "RedactionFilter" in read(APP / "core" / "logging.py"))
 session_route = read(APP / "api" / "routes_session.py")
 check("删除：覆盖 DB + 临时文件", "purge_session + purge_session_files", "purge_session(" in session_route and "purge_session_files" in session_route)
-# 删除传播可验证：提供脚本并覆盖 DB 五张表 + 临时目录（对应上线待办第 4 项验收）
+# 删除传播可验证：提供脚本并覆盖 DB 五张表 + 临时目录（对应《交付核查清单》第 4 项验收）
 check("删除传播可验证（脚本）", "backup_check.py 覆盖五张表 + 临时目录", (ROOT / "backend" / "scripts" / "backup_check.py").exists())
 # 追问历史必须纳入删除链（需求 15.5.4 / 16.2：禁止绕过 purge_session 的残留数据）
 repo_full = read(APP / "storage" / "repository.py")
@@ -91,7 +91,14 @@ check("容器：非 root 运行", "Dockerfile USER 指令", bool(grep_files(FE, 
 check("后端容器化（Dockerfile/compose）", "backend Dockerfile", (ROOT / "backend" / "Dockerfile").exists())
 check("CI/依赖漏洞扫描", "workflows 或扫描配置", (ROOT / ".github").exists() or (ROOT / ".." / ".github").exists())
 check("错误响应不泄露内部细节", "unhandled_error_handler", "服务内部错误" in read(APP / "core" / "errors.py"))
-check("SQL 注入防护（参数化）", "execute 使用占位符", "execute(" in repository and "?" in repository)
+_sql_sources = repository + read(APP / "storage" / "maintenance.py")
+check(
+    "SQL 注入防护（参数化 + 无标识符拼接）",
+    "execute 使用占位符，且不存在 f-string 拼接 SQL 语句",
+    "execute(" in repository
+    and "?" in repository
+    and not re.search(r"f[\"']\s*(SELECT|DELETE|INSERT|UPDATE|ALTER|DROP)\b", _sql_sources, re.IGNORECASE),
+)
 
 # 隐私声明与实际数据流一致性（数据外发 + 持久化口径）
 upload_view = read(FE / "src" / "views" / "UploadView.vue")

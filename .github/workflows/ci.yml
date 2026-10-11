@@ -26,6 +26,9 @@ jobs:
       # 指标回归：检出率 / 精确率 / 定位率的口径以本脚本实际输出为准
       - name: Eval regression (AC-2 / AC-3)
         run: python backend/scripts/eval_ac.py
+      # 消融回归：E/A/B/C 四配置（要素提取 × 门控）与要素 P/R/F1；低于下限返回非零
+      - name: Ablation regression (gate)
+        run: python backend/scripts/ablation.py --strict
       # 安全核查：未通过时返回非零，阻断合并
       - name: Security audit (gate)
         run: python backend/scripts/security_audit.py

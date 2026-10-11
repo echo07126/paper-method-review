@@ -38,6 +38,7 @@ def test_cleanup_respects_retention_floor(tmp_path: Path) -> None:
 
     result = cleanup_expired(db_path, str(temp_dir), retention_hours=2)
     assert result["removed_sessions"] == 1
+    assert "removed_jobs" in result  # 任务清理指标与其它清理口径一并返回
     assert not (temp_dir / session_id).exists()
 
 

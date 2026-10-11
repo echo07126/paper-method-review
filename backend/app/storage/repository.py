@@ -8,6 +8,13 @@ from app.core.ids import new_id
 from app.storage.db import connect
 
 
+# 资源读取语句白名单：表名/列名不允许参与 SQL 拼接，从根上消除标识符注入面。
+_AUTHORIZED_SQL = {
+    ("documents", "ir_json"): "SELECT ir_json FROM documents WHERE id = ? AND session_id = ?",
+    ("reports", "report_json"): "SELECT report_json FROM reports WHERE id = ? AND session_id = ?",
+}
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -102,6 +109,68 @@ class Store:
             raise AppError("not_found", "report 不存在或无权访问。", 404)
         return str(row["document_id"])
 
+    # ---- 任务（jobs 表不加列：kind/params/result/error 全放 payload JSON）----
+    def create_job(self, job_id: str, session_id: str, kind: str, params: dict) -> None:
+        now = _now().isoformat()
+        connection = connect(self.db_path)
+        try:
+            connection.execute(
+                "INSERT INTO jobs (id, session_id, state, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, session_id, "queued", json.dumps({"kind": kind, "params": params}, ensure_ascii=False), now, now),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def mark_job_running(self, job_id: str) -> None:
+        connection = connect(self.db_path)
+        try:
+            connection.execute(
+                "UPDATE jobs SET state = ? , updated_at = ? WHERE id = ?",
+                ("running", _now().isoformat(), job_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def finish_job(self, job_id: str, state: str, body: dict) -> None:
+        """把结果/错误合并进 payload 并置终态（读回-合并-写回，保留 kind/params）。"""
+        connection = connect(self.db_path)
+        try:
+            row = connection.execute("SELECT payload FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            payload = json.loads(row["payload"]) if row else {}
+            payload.update(body)
+            connection.execute(
+                "UPDATE jobs SET state = ?, payload = ?, updated_at = ? WHERE id = ?",
+                (state, json.dumps(payload, ensure_ascii=False), _now().isoformat(), job_id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def authorized_job(self, session_id: str, job_id: str) -> dict:
+        """按会话归属读取任务状态。越权与不存在统一 404（不泄露资源存在性）。"""
+        connection = connect(self.db_path)
+        try:
+            row = connection.execute(
+                "SELECT id, state, payload, created_at, updated_at FROM jobs WHERE id = ? AND session_id = ?",
+                (job_id, session_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if not row:
+            raise AppError("not_found", "task 不存在或无权访问。", 404)
+        payload = json.loads(row["payload"])
+        return {
+            "task_id": row["id"],
+            "kind": payload.get("kind", ""),
+            "state": row["state"],
+            "result": payload.get("result"),
+            "error": payload.get("error"),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
     def list_reports(self, session_id: str) -> list[dict]:
         connection = connect(self.db_path)
         try:
@@ -127,12 +196,12 @@ class Store:
 
     # ---- 内部 ----
     def _authorized(self, table: str, column: str, session_id: str, resource_id: str, kind: str) -> dict:
+        statement = _AUTHORIZED_SQL.get((table, column))
+        if statement is None:
+            raise AppError("internal_error", "不允许的资源类型。", 500)
         connection = connect(self.db_path)
         try:
-            row = connection.execute(
-                f"SELECT {column} FROM {table} WHERE id = ? AND session_id = ?",
-                (resource_id, session_id),
-            ).fetchone()
+            row = connection.execute(statement, (resource_id, session_id)).fetchone()
         finally:
             connection.close()
         if not row:

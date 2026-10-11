@@ -6,6 +6,7 @@
 """
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +36,21 @@ def build(path: Path) -> None:
     doc.save(path)
 
 
+def wait_task(client: TestClient, prefix: str, task_id: str, timeout: float = 30.0) -> dict:
+    """轮询任务至终态（重接口已异步化：POST 202 + GET /tasks/{id}）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = client.get(f"{prefix}/tasks/{task_id}")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        if payload["state"] == "succeeded":
+            return payload["result"]
+        if payload["state"] == "failed":
+            raise AssertionError(f"任务失败：{payload['error']}")
+        time.sleep(0.05)
+    raise AssertionError("任务超时未完成")
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="demote_check_"))
     settings = IsolatedSettings(
@@ -57,14 +73,16 @@ def main() -> int:
             assert upload.status_code == 200, upload.text
             document_id = upload.json()["document_id"]
 
-            strict = client.post(f"{PREFIX}/reviews", json={"document_id": document_id, "use_llm": False, "demote_on_figures": False})
-            conservative = client.post(f"{PREFIX}/reviews", json={"document_id": document_id, "use_llm": False, "demote_on_figures": True})
-            assert strict.status_code == 200 and conservative.status_code == 200
+            strict_task = client.post(f"{PREFIX}/reviews", json={"document_id": document_id, "use_llm": False, "demote_on_figures": False})
+            conservative_task = client.post(f"{PREFIX}/reviews", json={"document_id": document_id, "use_llm": False, "demote_on_figures": True})
+            assert strict_task.status_code == 202 and conservative_task.status_code == 202, "重接口应返回 202（任务模式）"
+            strict = wait_task(client, PREFIX, strict_task.json()["task_id"])
+            conservative = wait_task(client, PREFIX, conservative_task.json()["task_id"])
 
-            print("strict      :", strict.json()["counts"], "figures=", strict.json()["figure_references"], "demote=", strict.json()["demote_on_figures"])
-            print("conservative:", conservative.json()["counts"], "figures=", conservative.json()["figure_references"], "demote=", conservative.json()["demote_on_figures"])
-            assert conservative.json()["demote_on_figures"] is True
-            assert conservative.json()["counts"]["total"] < strict.json()["counts"]["total"], "保守模式应把依赖图表的条目降级"
+            print("strict      :", strict["counts"], "figures=", strict["figure_references"], "demote=", strict["demote_on_figures"])
+            print("conservative:", conservative["counts"], "figures=", conservative["figure_references"], "demote=", conservative["demote_on_figures"])
+            assert conservative["demote_on_figures"] is True
+            assert conservative["counts"]["total"] < strict["counts"]["total"], "保守模式应把依赖图表的条目降级"
     finally:
         set_settings_override(None)
 

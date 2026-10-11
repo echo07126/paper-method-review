@@ -12,12 +12,13 @@
 """
 import base64
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.core.logging import safe_logger
 from app.engine.llm_provider import LLMProvider, LLMUnavailable
 from app.engine.prompts import SYSTEM_GUARD
-from app.models.schemas import DocumentIR, Finding, Severity, Verdict
+from app.models.schemas import DocumentIR, Finding, ImageRef, Severity, Verdict
 
 ITEM_ID = "R-FIG-02"
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -83,12 +84,30 @@ def read_figure_values(
     root = Path(media_root)
     findings: list[Finding] = []
     tokens = {"input": 0, "output": 0}
+    # 先按文档流顺序收集可读图片；顺序必须稳定——调用方用 findings 顺序拼 vision_facts 注入提示词。
+    targets: list[tuple[ImageRef, str]] = []
     for image in document.images[:max_images]:
         data_url = _data_url(root / image.filename, image.media_type)
         if data_url is None:
             continue
+        targets.append((image, data_url))
+
+    def _read_target(target: tuple[ImageRef, str]) -> tuple[dict | None, dict]:
+        image, data_url = target
         label = image.caption or f"第 {image.index + 1} 张插图"
-        payload, usage = _read_one(provider, data_url, image.caption, label)
+        return _read_one(provider, data_url, image.caption, label)
+
+    # 各图识读彼此独立：并发提交、按提交顺序取回，保证 findings 顺序与串行执行完全一致。
+    # 全局并发仍受 DeepSeekProvider 进程内共享的 LLM_MAX_CONCURRENCY 信号量约束。
+    if len(targets) > 1:
+        with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+            futures = [pool.submit(_read_target, target) for target in targets]
+            results = [future.result() for future in futures]
+    else:
+        results = [_read_target(target) for target in targets]
+
+    for (image, _), (payload, usage) in zip(targets, results):
+        label = image.caption or f"第 {image.index + 1} 张插图"
         tokens["input"] += int(usage.get("input", 0))
         tokens["output"] += int(usage.get("output", 0))
         if not payload:

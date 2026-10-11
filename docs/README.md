@@ -10,7 +10,7 @@
 | 开发与联调 | `engineering/开发规范与开发顺序.md` → `engineering/API接口说明.md` → `evaluation/开发过程与验证记录.md` |
 | 测试与复核 | `evaluation/测试论文生成提示词.md` → `evaluation/blind-tests/` → `materials/03-测试报告.md` |
 | 部署与运维 | `operations/本地启动运行手册.md`（本机跑起来） → `operations/生产部署启动手册.md` → `operations/安全与运维核查清单.md` → `operations/生产上线待办清单.md` |
-| 答辩与提交 | `competition/竞赛硬性门槛与评分规则对齐.md` → `competition/项目说明与答辩要点.md` → `materials/00-材料总览.md` |
+| 答辩与提交 | `competition/竞赛硬性门槛与评分规则对齐.md` → `competition/项目说明与答辩要点.md` → `materials/` |
 
 ## 目录说明
 
@@ -26,7 +26,7 @@ docs/
 │   ├── 本地启动运行手册.md            # 本机前后端启动、配置、自测与排查
 │   ├── 生产部署启动手册.md            # 公网部署、TLS 与上线收口
 │   ├── 安全与运维核查清单.md          # 已实现控制点与运维核查
-│   └── 生产上线待办清单.md            # 8 项上线门禁与验收
+│   └── 生产上线待办清单.md            # 本地交付核查（三态）与验收
 ├── evaluation/
 │   ├── 测试论文生成提示词.md
 │   ├── 开发过程与验证记录.md
@@ -45,12 +45,14 @@ docs/
 - 功能范围以 `product/软件需求说明.md` 为准。
 - 评测数量和指标以 `python backend/scripts/eval_ac.py` 的实际输出为准，入口说明见 `samples/README.md`。
 - 安全控制点以 `python backend/scripts/security_audit.py` 为准，业务说明见 `operations/安全与运维核查清单.md`。
-- 生产上线状态以 `operations/生产上线待办清单.md` 和 `backend/scripts/deploy_gate.py` 为准。
-- 最终提交材料以 `materials/00-材料总览.md` 为准；`docs/` 保存内部规范与证据，不重复制作提交版。
+- 交付核查状态以 `operations/生产上线待办清单.md`（三态：已内置 / 需运行方完成 / 不适用）和 `backend/scripts/deploy_gate.py` 为准。
+- 最终提交材料以 `materials/` 目录为准（01 软件说明文档 / 02 核心算法说明 / 03 测试报告 / 04 技术栈运行环境与部署 / 05 功能演示视频）；`docs/` 保存内部规范与证据，不重复制作提交版。
 
 ## 当前报告能力边界
 
 - 用户可以查看结构化审查报告，并下载 Markdown 审查报告。
+- 报告中的每条 Finding 同时带严重等级与确定性等级（deterministic 确定性核验 / suspected 高置信疑似 / undetermined 未能判定）；「未能判定」在报告中显式列出且不计入问题数。Markdown 导出含「确定性统计」与「本项未能判定」段。
+- 高级应用六项已落地：按要素定向送审（`LLM_DIRECTED_REVIEW`）、证据检索式审查（RAG 原文切片检索）、双模型互证（`LLM_DUAL_CHECK`）、R-DATA-* 数值自洽检测器族（清单外附加检查）、多模态读图入证、评测驱动。
 - 当前不导出“已自动修改的论文 DOCX”：修改稿在系统内生成并对修改稿做真实二次审查（补写由模型结合全文生成、须附可核验原文出处，图表/真实数据依赖条目由作者处理），作者据此回到 Word 中落实；原文件与修改稿均仅在会话内暂存。
 - 盲测报告是内部验证证据，不是用户论文的修改稿，也不是运行时生成的用户报告。
-- 解析能力边界：一期不解析公式与图片，表格按行并入 `paragraphs[]` 仅作上下文。**二期（`软件需求说明.md` §15.5）已全部落地**：表格结构化入 `tables[]` 并从 `paragraphs[]` 移出、OMML 公式文本提取、L1 图-文一致性（`R-FIG-01`）、内嵌图片落盘 + 视觉识读（`R-FIG-02`，结论为「存疑」）、追问支持多轮上下文（上限 10 轮 / 20 条 + 8000 字符）、自由提问面向全文（注入全文 DATA 区，`QA_FULLTEXT_MAX_CHARS` 约束）、修改稿由模型结合全文补写并做真实二次审查。
+- 解析能力边界：一期不解析公式与图片，表格按行并入 `paragraphs[]` 仅作上下文。**二期（`软件需求说明.md` §15.5）已全部落地**：表格结构化入 `tables[]` 并从 `paragraphs[]` 移出、OMML 公式文本提取、L1 图-文一致性（`R-FIG-01`）、内嵌图片落盘 + 视觉识读（`R-FIG-02`，结论为「存疑」，图内数值另注入定向送审提示词作为辅助事实）、追问支持多轮上下文（上限 10 轮 / 20 条 + 8000 字符）、自由提问面向全文（注入全文 DATA 区，`QA_FULLTEXT_MAX_CHARS` 约束）、修改稿由模型结合全文补写并做真实二次审查。

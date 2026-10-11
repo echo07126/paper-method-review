@@ -12,6 +12,19 @@ class Severity(str, Enum):
     LOW = "low"
 
 
+class Certainty(str, Enum):
+    """确定性等级：与 severity 正交——severity 衡量问题多严重，certainty 衡量我们多确定。
+
+    - deterministic：判据依赖 OOXML 结构或数值运算（角标编号集合、文献编号集合等），可承诺正确；
+    - suspected：正则 + 多条件命中的高置信疑似，仅作提示，需人工确认；
+    - undetermined：证据不足，本项未能判定（替代此前静默 return []）。
+    """
+
+    DETERMINISTIC = "deterministic"
+    SUSPECTED = "suspected"
+    UNDETERMINED = "undetermined"
+
+
 class Verdict(str, Enum):
     PASS = "pass"
     PROBLEM = "problem"
@@ -112,6 +125,11 @@ class ReviewItem(BaseModel):
     applies_when: str | None = None
     requires: list[str] = Field(default_factory=list)
     severity_default: Severity = Severity.MID
+    # 判定主体分工（条目级「审查拆分」的唯一事实源）：
+    #   rule     —— 判据依赖 OOXML 结构或数值运算（引用编号对账等），规则侧判定，不送模型；
+    #   llm      —— 语义类判据，模型主导，结论必须挂到要素/原文锚点（无证据仍降级为存疑）；
+    #   advisory —— 证据常落在图/表或判定本身偏软，模型只出「建议」，一律降级为存疑。
+    judge: Literal["rule", "llm", "advisory"] = "llm"
     title: str
     description: str = ""
     suggestion_template: str = ""
@@ -134,12 +152,18 @@ class Finding(BaseModel):
     checklist_item_id: str
     verdict: Verdict
     severity: Severity
+    certainty: Certainty = Certainty.SUSPECTED
     headline: str
     description: str = ""
     evidence_elements: list[str] = Field(default_factory=list)
     anchors: list[Anchor] = Field(default_factory=list)
     suggestion: str = ""
     provenance: dict[str, Any] = Field(default_factory=dict)
+    # 输出质量量化（与 severity / certainty 均正交）：confidence 为 0–1 连续置信度，
+    # 由「判据基分 × 证据 × 一致性 × 门控因子」合成；grade 为据此划分的 A/B/C/D 档
+    # （A 高置信可直接采信、B 中置信建议确认、C 低置信需复核、D 未能判定/证据不足）。
+    confidence: float = 0.0
+    grade: Literal["A", "B", "C", "D"] = "B"
 
 
 class ReviewReport(BaseModel):
@@ -154,13 +178,39 @@ class ReviewReport(BaseModel):
     figure_references: int = 0
     demote_on_figures: bool = False
     paper_type: str = "unknown"
+    # 质量卡：分级分布、门控分布、平均置信度与审查率（assessed/applicable），供前端与导出消费。
+    quality: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobState(str, Enum):
+    """任务状态（jobs.state 列的取值），与 app/tasks/executor.py 中的常量一致。"""
+
     QUEUED = "queued"
     RUNNING = "running"
-    DONE = "done"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class TaskAccepted(BaseModel):
+    """重接口入队响应（HTTP 202）：提交后由前端轮询 /tasks/{task_id} 取结果。"""
+
+    task_id: str
+    state: str
+    kind: str
+    # 相对 API 前缀（/api/v1）的轮询路径，如 /tasks/job_xxx
+    poll_url: str
+
+
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    kind: str
+    state: str
+    # 成功时为旧同步响应体（字段与改造前逐字段一致）；失败时 error 带 code/message
+    result: dict | None = None
+    error: dict | None = None
+    created_at: str
+    updated_at: str
+
 
 class SectionSummary(BaseModel):
     title: str
@@ -197,6 +247,7 @@ class ReviewCreateResponse(BaseModel):
     figure_references: int = 0
     demote_on_figures: bool = False
     paper_type: str = "unknown"
+    quality: dict[str, Any] = Field(default_factory=dict)
 
 
 class ReportSummary(BaseModel):
@@ -219,6 +270,7 @@ class CompareFinding(BaseModel):
     checklist_item_id: str
     headline: str = ""
     severity: Severity = Severity.MID
+    certainty: Certainty = Certainty.SUSPECTED
     verdict: Verdict = Verdict.PROBLEM
     anchors: list[Anchor] = Field(default_factory=list)
     description: str = ""

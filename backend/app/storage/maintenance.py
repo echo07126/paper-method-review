@@ -8,6 +8,8 @@
 - 数据库内文档正文（`documents.ir_json`）与追问历史（`chat_messages`）随会话过期一并删除，
   与「正文仅在本次会话内暂存」的隐私口径一致。
 - `DATA_RETENTION_HOURS` 作为保留期下限：即使会话未过期，超过该时长的数据也一并清理。
+- 任务队列（`jobs`）：随会话一并清除；另按 `TASK_RETENTION_MINUTES` 清除终态旧任务与
+  僵尸任务（进程被杀后永远 queued/running 的残留）。
 """
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -49,9 +51,22 @@ def cleanup_expired(db_path: str, temp_dir: str, retention_hours: int | None = N
         rows = connection.execute("SELECT id FROM sessions WHERE expires_at < ? OR created_at < ?", (now.isoformat(), cutoff)).fetchall()
         expired_ids = [row["id"] for row in rows]
         _purge_session_rows(connection, expired_ids)
-        # 兜底自愈：清理任何已无对应会话的残留行（覆盖并发写入竞态产生的孤儿数据）
-        for table in ("chat_messages", "reports", "documents", "jobs"):
-            connection.execute(f"DELETE FROM {table} WHERE session_id NOT IN (SELECT id FROM sessions)")
+        # 兜底自愈：清理任何已无对应会话的残留行（覆盖并发写入竞态产生的孤儿数据）。
+        # 逐表写死语句，表名不参与拼接。
+        connection.execute("DELETE FROM chat_messages WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM reports WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM documents WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM jobs WHERE session_id NOT IN (SELECT id FROM sessions)")
+        # 任务生命周期（TASK_RETENTION_MINUTES）：终态任务超过保留期即清除；
+        # 僵尸任务（进程被杀后永远 queued/running）按创建时间兜底清除。
+        job_cutoff = (now - timedelta(minutes=settings.task_retention_minutes)).isoformat()
+        finished = connection.execute(
+            "DELETE FROM jobs WHERE state IN ('succeeded', 'failed') AND updated_at < ?", (job_cutoff,)
+        )
+        stale = connection.execute(
+            "DELETE FROM jobs WHERE state IN ('queued', 'running') AND created_at < ?", (job_cutoff,)
+        )
+        removed_jobs = (finished.rowcount or 0) + (stale.rowcount or 0)
         connection.commit()
     finally:
         connection.close()
@@ -74,6 +89,7 @@ def cleanup_expired(db_path: str, temp_dir: str, retention_hours: int | None = N
     result = {
         "removed_sessions": len(expired_ids),
         "removed_temp_dirs": removed_dirs,
+        "removed_jobs": removed_jobs,
         "retention_hours": retention_hours,
     }
     safe_logger().info("maintenance cleanup done %s", result)

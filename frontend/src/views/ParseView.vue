@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import client from "@/api/client";
+import { submitAndPoll } from "@/api/tasks";
 import type { DocumentResponse, ReviewCreateResponse } from "@/api/types";
 import { useSessionStore } from "@/stores/session";
 
@@ -59,7 +60,8 @@ async function runReview() {
   loading.value = true;
   error.value = "";
   try {
-    const { data } = await client.post<ReviewCreateResponse>("/reviews", {
+    // 审查为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取报告，期间不占用长连接。
+    const data = await submitAndPoll<ReviewCreateResponse>("/reviews", {
       document_id: store.documentId,
       use_llm: useLlm.value,
       demote_on_figures: demoteOnFigures.value,

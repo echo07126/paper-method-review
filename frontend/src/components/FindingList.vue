@@ -16,16 +16,35 @@ const emit = defineEmits<{
 /** 展开态：点击某条即在清单内联展开详情（详情、定位原文、追问都收在这一条里） */
 const expanded = ref<string | null>(null);
 
-function chipOf(finding: Finding): "high" | "mid" | "low" | "uncertain" | "pass" {
+function chipOf(finding: Finding): "high" | "mid" | "low" | "uncertain" | "pass" | "undetermined" {
+  if (finding.certainty === "undetermined") return "undetermined";
   if (finding.verdict === "pass") return "pass";
   return finding.verdict === "uncertain" ? "uncertain" : finding.severity;
 }
 
 function verdictLabel(finding: Finding): string {
+  if (finding.certainty === "undetermined") return "未能判定";
   if (finding.verdict === "pass") return "通过";
   if (finding.verdict === "not_applicable") return "未适用";
   if (finding.verdict === "uncertain") return "存疑";
   return `问题 · ${finding.severity === "high" ? "严重" : finding.severity === "mid" ? "中等" : "轻微"}`;
+}
+
+/** 确定性标签：确定性核验 / 疑似（需人工确认） */
+function certaintyLabel(finding: Finding): string {
+  if (finding.certainty === "deterministic") return "确定性核验";
+  if (finding.certainty === "suspected") return "疑似（需人工确认）";
+  return "";
+}
+
+/** 输出质量标签：A 高置信 / B 中置信 / C 低置信 / D 待确认 */
+const GRADE_LABEL: Record<string, string> = { A: "高置信", B: "中置信", C: "低置信", D: "待确认" };
+
+function confidenceLabel(finding: Finding): string {
+  if (finding.confidence === undefined || finding.confidence === null) return "";
+  const grade = finding.grade ?? "";
+  const name = GRADE_LABEL[grade] ?? "";
+  return `置信 ${finding.confidence.toFixed(2)}${grade ? ` · ${grade} ${name}` : ""}`;
 }
 
 function anchorLabel(finding: Finding): string {
@@ -81,6 +100,8 @@ watch(
           <div class="f-meta">
             <span>📍 {{ anchorLabel(finding) }}</span>
             <span>判定：{{ verdictLabel(finding) }}</span>
+            <span v-if="certaintyLabel(finding)">确定性：{{ certaintyLabel(finding) }}</span>
+            <span v-if="confidenceLabel(finding)" class="f-grade">{{ confidenceLabel(finding) }}</span>
           </div>
         </button>
 
@@ -118,6 +139,7 @@ watch(
 .f-title { flex: 1; font-weight: 600; font-size: 13.5px; }
 .f-arrow { color: var(--ink-3); font-size: 12px; }
 .f-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; font-size: 11.5px; color: var(--ink-3); }
+.f-grade { color: var(--accent); font-weight: 600; }
 .f-detail { padding: 0 16px 12px; }
 .f-desc { margin: 4px 0 8px; font-size: 13px; color: var(--ink-2); }
 .f-block { border-left: 3px solid var(--line); padding: 5px 10px; margin: 8px 0; font-size: 13px; }

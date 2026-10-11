@@ -2,7 +2,10 @@ import re
 
 from app.core.ids import new_id
 from app.engine.elements import elements_of_type, extract_elements, has_element
-from app.models.schemas import Anchor, DocumentIR, Element, Finding, Severity, Verdict
+from app.models.schemas import Anchor, Certainty, DocumentIR, Element, Finding, Severity, Verdict
+
+# 判据依赖 OOXML 结构 / 数值运算的规则：可承诺确定性（其余为“正则+多条件”的高置信疑似）。
+DETERMINISTIC_RULES = {"R-REF-01", "R-REF-02"}
 
 LEAKAGE_PATTERN = re.compile(r"(网格搜索|随机搜索|调参|超参数|模型选择)")
 NAMED_TEST_PATTERN = re.compile(
@@ -44,8 +47,27 @@ def _anchor_of(element: Element) -> Anchor:
 def _make(item_id, verdict, severity, headline, description, suggestion, anchors, rule_id) -> Finding:
     return Finding(
         finding_id=new_id("F"), checklist_item_id=item_id, verdict=verdict, severity=severity,
+        certainty=Certainty.DETERMINISTIC if rule_id in DETERMINISTIC_RULES else Certainty.SUSPECTED,
         headline=headline, description=description, anchors=anchors, suggestion=suggestion,
         provenance={"engine": "rule", "rule_id": rule_id},
+    )
+
+
+def undetermined_finding(item_id: str, title: str = "", rule_id: str | None = None) -> Finding:
+    """未判定条目：规则未产出结论时显式登记「本项未能判定」，替代此前的静默 return []。
+
+    语义为「未评估/证据不足」，不是「合规」。certainty=undetermined 使其在报告与导出中可被单独识别。
+    """
+    return Finding(
+        finding_id=new_id("F"),
+        checklist_item_id=item_id,
+        verdict=Verdict.NOT_APPLICABLE,
+        severity=Severity.LOW,
+        certainty=Certainty.UNDETERMINED,
+        headline="本项未能判定",
+        description=f"未检出可支撑判定的原文要素（{title}），本项未能判定；如需评估请补充相应要素后重评。",
+        anchors=[],
+        provenance={"engine": "rule", "rule_id": rule_id or item_id, "not_evaluated": True},
     )
 
 
@@ -114,8 +136,20 @@ def _anchor_for(elements: list[Element], *types: str) -> list[Anchor]:
     return []
 
 
+def _table_texts_of(table) -> list[str]:
+    return [" | ".join(cell for cell in row if cell) for row in table.rows if any(cell for cell in row)]
+
+
+def _table_texts(document: DocumentIR) -> list[str]:
+    """表体各行文本：P2-2 后表格已移出 paragraphs[]，判定层必须单独纳入，否则表内要素不可见。"""
+    return [text for table in document.tables for text in _table_texts_of(table)]
+
+
 def _document_text(document: DocumentIR) -> str:
-    return "\n".join(paragraph.text for paragraph in document.paragraphs)
+    """全文文本 = 正文段落 + 表体行，供模式判定使用（消除“表格盲区”误报）。"""
+    body = [paragraph.text for paragraph in document.paragraphs]
+    body.extend(_table_texts(document))
+    return "\n".join(body)
 
 
 def _has_metric(elements: list[Element]) -> bool:
@@ -176,14 +210,17 @@ def rule_data_split(document: DocumentIR, elements: list[Element]) -> list[Findi
     if not anchors:
         return []
     leakage: list[Finding] = []
-    for paragraph in document.paragraphs:
+    # 正文段与表体行统一纳入泄漏判定，避免泄漏描述只写在表格里时漏判。
+    units: list[tuple[str, int]] = [(p.text, p.index) for p in document.paragraphs]
+    units.extend((text, table.anchor.paragraph_index) for table in document.tables for text in _table_texts_of(table))
+    for text, anchor_index in units:
         # 仅当“调参/模型选择”与“测试集”同时出现、且未声明“测试集仅用于最终评估”时，才判为泄漏；
         # 在验证集上调参属于规范做法，不应误报。
-        if LEAK_ON_TEST_PATTERN.search(paragraph.text):
+        if LEAK_ON_TEST_PATTERN.search(text):
             leakage.append(_problem("R-03", Severity.HIGH, "疑似在验证/测试集上调参（信息泄漏风险）",
-                                    f"原文：「{paragraph.text.strip()[:80]}…」在评估集相关语句中出现调参/模型选择描述。",
+                                    f"原文：「{text.strip()[:80]}…」在评估集相关语句中出现调参/模型选择描述。",
                                     "改为在训练集（或训练+验证）上调参，独立测试集只评估一次，并写明随机种子。",
-                                    [_anchor(paragraph.index)], "R-03"))
+                                    [_anchor(anchor_index)], "R-03"))
     if leakage:
         return leakage
     if has_element(elements, "data_split"):
@@ -192,6 +229,9 @@ def rule_data_split(document: DocumentIR, elements: list[Element]) -> list[Findi
             for p in document.paragraphs
             if re.search(r"(划分|训练集|验证集|测试集|交叉验证)", p.text)
         ]
+        split_paragraphs.extend(
+            t for t in _table_texts(document) if re.search(r"(划分|训练集|验证集|测试集|交叉验证)", t)
+        )
         if any(SPLIT_DETAIL_PATTERN.search(t) for t in split_paragraphs):
             return [_pass("R-03", "已描述数据划分", "R-03", anchors)]
         return [_problem("R-03", Severity.HIGH, "未描述具体数据划分比例与随机种子",
@@ -389,11 +429,10 @@ def rule_hyperparameter_justification(document: DocumentIR, elements: list[Eleme
     if not has_element(elements, "hyperparameter"):
         return []
     anchors = _anchor_for(elements, "hyperparameter")
-    hyper_paragraphs = [
-        p.text
-        for p in document.paragraphs
-        if re.search(r"(超参数|学习率|批量大小|批大小|Dropout|权重衰减|卷积核|搜索|调参|正则化系数|正则化参数)", p.text)
-    ]
+    hyper_pattern = re.compile(r"(超参数|学习率|批量大小|批大小|Dropout|权重衰减|卷积核|搜索|调参|正则化系数|正则化参数)")
+    hyper_paragraphs = [p.text for p in document.paragraphs if hyper_pattern.search(p.text)]
+    # 超参数表常以表格给出，表体必须一并纳入，否则“仅给出取值未说明依据”会误报。
+    hyper_paragraphs.extend(t for t in _table_texts(document) if hyper_pattern.search(t))
     body_text = _document_text(document)
     citation_stripped = [
         re.sub(r"\[\s*\d[\d\s,，\-–—]*\]", "", t) for t in hyper_paragraphs
@@ -445,9 +484,25 @@ RULES = [
 ]
 
 
-def run_rules(document: DocumentIR, elements: list[Element] | None = None) -> list[Finding]:
+def run_rules(
+    document: DocumentIR,
+    elements: list[Element] | None = None,
+    severity_defaults: dict[str, Severity] | None = None,
+) -> list[Finding]:
+    """运行全部规则。
+
+    severity_defaults 来自清单 JSON 的 severity_default（以配置为唯一事实源）：
+    规则内部硬编码的等级仅作为缺省，一旦清单给出该条等级则以清单为准，避免「配置与实现不一致」。
+    """
     resolved = elements if elements is not None else extract_elements(document)
     findings: list[Finding] = []
     for rule in RULES:
         findings.extend(rule(document, resolved))
+    if severity_defaults:
+        findings = [
+            finding.model_copy(update={"severity": severity_defaults[finding.checklist_item_id]})
+            if finding.verdict == Verdict.PROBLEM and finding.checklist_item_id in severity_defaults
+            else finding
+            for finding in findings
+        ]
     return findings

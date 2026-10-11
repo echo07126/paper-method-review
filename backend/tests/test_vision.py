@@ -70,6 +70,8 @@ def test_image_is_saved_and_anchored(tmp_path: Path) -> None:
     assert image.byte_size > 0
     assert image.caption.startswith("图1"), "应关联到紧邻图片下方的题注"
     assert (tmp_path / image.filename).exists(), "图片应已落盘"
+    kept = {paragraph.index for paragraph in document.paragraphs}
+    assert image.anchor.paragraph_index in kept, "图片锚点必须落在实际存在的段落上（否则前端无法定位/高亮）"
     assert document.meta.get("image_saved") == 1
     assert document.parser_version == "1.3"
 

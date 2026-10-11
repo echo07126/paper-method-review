@@ -17,13 +17,17 @@ const paragraphs = ref<Array<{ index: number; text: string }>>([]);
 const tables = ref<Table[]>([]);
 const activeFinding = ref<Finding | null>(null);
 const drawerOpen = ref(false);
-const filter = ref<"all" | "problem" | "uncertain" | "pass">("all");
+const filter = ref<"all" | "problem" | "uncertain" | "pass" | "undetermined" | "gradeA" | "gradeB" | "gradeCD">("all");
 
 const visibleFindings = computed(() => {
   const findings = report.value?.findings ?? [];
+  if (filter.value === "undetermined") return findings.filter((item) => item.certainty === "undetermined");
   if (filter.value === "problem") return findings.filter((item) => item.verdict === "problem");
   if (filter.value === "uncertain") return findings.filter((item) => item.verdict === "uncertain");
   if (filter.value === "pass") return findings.filter((item) => item.verdict === "pass");
+  if (filter.value === "gradeA") return findings.filter((item) => item.grade === "A");
+  if (filter.value === "gradeB") return findings.filter((item) => item.grade === "B");
+  if (filter.value === "gradeCD") return findings.filter((item) => item.grade === "C" || item.grade === "D");
   return findings;
 });
 
@@ -31,6 +35,20 @@ const topRisk = computed(() => {
   const problems = (report.value?.findings ?? []).filter((item) => item.verdict === "problem");
   const order = { high: 0, mid: 1, low: 2 };
   return [...problems].sort((a, b) => order[a.severity] - order[b.severity])[0] ?? null;
+});
+
+/** 质量卡：分级分布取后端汇总，缺省时按逐条 grade 兜底统计（保证老报告也能显示）。 */
+const gradeCounts = computed<Record<string, number>>(() => {
+  const fallback = (report.value?.findings ?? []).reduce<Record<string, number>>((acc, item) => {
+    if (item.grade) acc[item.grade] = (acc[item.grade] ?? 0) + 1;
+    return acc;
+  }, {});
+  return { ...fallback, ...(report.value?.quality?.grades ?? {}) };
+});
+const avgConfidence = computed(() => (report.value?.quality?.avg_confidence ?? 0).toFixed(2));
+const reviewRate = computed(() => {
+  const rate = report.value?.quality?.review_rate;
+  return rate === undefined ? "—" : `${Math.round(rate * 100)}%`;
 });
 
 const loadError = ref("");
@@ -102,6 +120,9 @@ const severityFilters = computed(() => ({
   low: report.value?.counts.low ?? 0,
   uncertain: report.value?.counts.uncertain ?? 0,
   pass: report.value?.counts.pass ?? 0,
+  undetermined: report.value?.counts.undetermined ?? 0,
+  deterministic: report.value?.counts.deterministic ?? 0,
+  suspected: report.value?.counts.suspected ?? 0,
 }));
 </script>
 
@@ -137,7 +158,13 @@ const severityFilters = computed(() => ({
       <div class="stat card">
         <span class="lbl">已评估条目</span>
         <span class="num">{{ report.counts.assessed ?? 0 }}</span>
-        <span class="tiny">17 条清单 + 附加检查</span>
+        <span class="tiny">确定性 {{ severityFilters.deterministic }} · 疑似 {{ severityFilters.suspected }} · 未判定 {{ severityFilters.undetermined }}</span>
+      </div>
+      <div class="stat card">
+        <span class="lbl">输出质量</span>
+        <span class="num">{{ avgConfidence }}</span>
+        <span class="tiny">平均置信度（0–1）· 审查率 {{ reviewRate }}</span>
+        <span class="tiny">A 高置信 {{ gradeCounts.A ?? 0 }} · B {{ gradeCounts.B ?? 0 }} · C {{ gradeCounts.C ?? 0 }} · D {{ gradeCounts.D ?? 0 }}</span>
       </div>
       <div class="stat card">
         <span class="lbl">审查耗时</span>
@@ -162,6 +189,11 @@ const severityFilters = computed(() => ({
           <button :class="{ on: filter === 'problem' }" @click="filter = 'problem'">仅问题（{{ severityFilters.problem }}）</button>
           <button :class="{ on: filter === 'uncertain' }" @click="filter = 'uncertain'">仅存疑（{{ severityFilters.uncertain }}）</button>
           <button :class="{ on: filter === 'pass' }" @click="filter = 'pass'">仅通过（{{ severityFilters.pass }}）</button>
+          <button :class="{ on: filter === 'undetermined' }" @click="filter = 'undetermined'">未判定（{{ severityFilters.undetermined }}）</button>
+          <span class="filter-sep" />
+          <button :class="{ on: filter === 'gradeA' }" @click="filter = 'gradeA'">A 高置信（{{ gradeCounts.A ?? 0 }}）</button>
+          <button :class="{ on: filter === 'gradeB' }" @click="filter = 'gradeB'">B 中置信（{{ gradeCounts.B ?? 0 }}）</button>
+          <button :class="{ on: filter === 'gradeCD' }" @click="filter = 'gradeCD'">C/D 待确认（{{ (gradeCounts.C ?? 0) + (gradeCounts.D ?? 0) }}）</button>
         </div>
         <FindingList
           :findings="visibleFindings"
@@ -212,6 +244,7 @@ const severityFilters = computed(() => ({
 .filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .filters button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; color: var(--ink-2); }
 .filters button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filter-sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px; }
 .report-grid { display: grid; grid-template-columns: 400px 1fr; gap: 20px; align-items: start; }
 .list-col { display: flex; flex-direction: column; min-height: 0; }
 .paper-col { position: sticky; top: 70px; }

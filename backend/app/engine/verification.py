@@ -4,7 +4,7 @@ import re
 
 from app.core.logging import safe_logger
 from app.engine.llm_provider import LLMProvider, LLMUnavailable
-from app.engine.prompts import SYSTEM_GUARD
+from app.engine.prompts import SYSTEM_GUARD, limit_prompt_text
 from app.models.schemas import Anchor, DocumentIR, Finding, Verdict
 
 ITEM_KEYWORDS: dict[str, list[str]] = {
@@ -89,7 +89,7 @@ def verify_findings(document: DocumentIR, findings: list[Finding], provider: LLM
         for index, finding in enumerate(pending)
     )
     body = [paragraph.text for paragraph in document.paragraphs] + _table_row_texts(document)
-    document_text = "\n".join(body)[:12000]
+    document_text = limit_prompt_text("\n".join(body))
     messages = [
         {"role": "system", "content": SYSTEM_GUARD + "\n" + VERIFY_INSTRUCTION},
         {

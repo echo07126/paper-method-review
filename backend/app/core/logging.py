@@ -11,6 +11,12 @@ SENSITIVE_KEYS = {"text", "content", "prompt", "token", "api_key", "authorizatio
 
 class RedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        # 先按键剔除：以字典形式传入的 text/content/prompt 等字段一律置为 [REDACTED]，
+        # 避免论文正文或密钥随结构化日志落盘。
+        if isinstance(record.args, dict) and SENSITIVE_KEYS & set(record.args):
+            record.args = {
+                key: ("[REDACTED]" if key in SENSITIVE_KEYS else value) for key, value in record.args.items()
+            }
         message = record.getMessage()
         for pattern in REDACT_PATTERNS:
             message = pattern.sub("[REDACTED]", message)

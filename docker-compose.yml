@@ -1,5 +1,5 @@
-# 单机部署：仅绑定本机回环，由前置 Nginx / 云负载均衡终止 TLS 并对外暴露 443。
-# 日志轮转与保留期见下方 x-logging 配置（对应上线待办第 5 项：日志保留 ≤30 天）。
+# 单机部署（本地 / 内网 Docker 包）：仅绑定本机回环；如对外发布，由前置 Nginx / 云负载均衡终止 TLS 并暴露 443。
+# 日志轮转与保留期见下方 x-logging 配置（对应交付核查清单第 5 项：日志保留 ≤30 天）。
 x-logging: &default-logging
   driver: json-file
   options:
@@ -9,6 +9,7 @@ x-logging: &default-logging
 services:
   backend:
     build: ./backend
+    image: paper-method-review-backend:${IMAGE_TAG:-1.0}
     env_file: ./backend/.env
     environment:
       DB_PATH: /app/data/app.db
@@ -18,7 +19,7 @@ services:
       APP_ENV: ${APP_ENV:-dev}
       DEBUG: ${DEBUG:-false}
       DOCS_ENABLED: ${DOCS_ENABLED:-false}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:8080}
     volumes:
       - ./data:/app/data
       - ./checklists:/app/checklists:ro
@@ -35,6 +36,7 @@ services:
 
   frontend:
     build: ./frontend
+    image: paper-method-review-frontend:${IMAGE_TAG:-1.0}
     depends_on:
       backend:
         condition: service_healthy

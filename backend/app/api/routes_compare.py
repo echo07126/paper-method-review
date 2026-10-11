@@ -9,7 +9,8 @@ from app.core.config import get_settings
 from app.engine.checklist import load_checklist
 from app.engine.llm_provider import build_provider
 from app.engine.revision import review_and_compare
-from app.models.schemas import CompareResponse, DocumentIR, ReviewReport, Verdict
+from app.models.schemas import DocumentIR, ReviewReport, TaskAccepted, Verdict
+from app.tasks import submit
 
 router = APIRouter(tags=["compare"])
 
@@ -26,6 +27,7 @@ def _detail(finding) -> dict:
         "checklist_item_id": finding.checklist_item_id,
         "headline": finding.headline,
         "severity": finding.severity,
+        "certainty": finding.certainty,
         "verdict": finding.verdict,
         "anchors": [a.model_dump() for a in finding.anchors],
         "description": finding.description,
@@ -74,37 +76,59 @@ def _build_response(before: ReviewReport, after: ReviewReport) -> dict:
     }
 
 
-@router.post("/compare", response_model=CompareResponse)
+@router.post("/compare", response_model=TaskAccepted, status_code=202)
 def compare(payload: CompareRequest, request: Request, response: Response) -> dict:
-    """没有修改稿报告时，用初稿报告里的示范改写生成修改稿并二次审查，再对比。
+    """提交对比任务：没有修改稿报告时，用初稿报告里的示范改写生成修改稿并二次审查，再对比。
 
     这样右侧清单与原文都来自真实复审，而不是"假定已解决"的推算。
+    立即 202，业务主体在任务线程池执行，前端轮询 /tasks/{id}。
     """
-    settings = get_settings()
     store = get_store()
     session_id = resolve_session(request, response, store)
+    # 快速失败校验：越权/不存在仍在 202 之前返回 404
     before = ReviewReport(**store.authorized_report(session_id, payload.before_report_id))
-
+    after: ReviewReport | None = None
+    document: DocumentIR | None = None
     if payload.after_report_id:
         after = ReviewReport(**store.authorized_report(session_id, payload.after_report_id))
-        return _build_response(before, after)
+    else:
+        document_id = store.report_document_id(session_id, payload.before_report_id)
+        document = DocumentIR(**store.authorized_document(session_id, document_id))
 
-    document_id = store.report_document_id(session_id, payload.before_report_id)
-    document = DocumentIR(**store.authorized_document(session_id, document_id))
-    items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
-    provider = build_provider(settings)
-    use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
-    _, after, revised_document, revision_status = review_and_compare(
-        document,
-        items,
-        provider=provider,
-        use_llm=use_llm and provider is not None,
-        media_root=Path(settings.temp_dir) / session_id,
+    def _run() -> dict:
+        settings = get_settings()
+        store = get_store()
+        if after is not None:
+            return _build_response(before, after)
+
+        assert document is not None  # 由提交前的校验保证
+        items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
+        provider = build_provider(settings)
+        use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
+        # 复用已取回的初稿报告，避免把同一篇初稿再审查一遍（省一次完整模型审查）。
+        _, revised_report, revised_document, revision_status = review_and_compare(
+            document,
+            items,
+            provider=provider,
+            use_llm=use_llm and provider is not None,
+            media_root=Path(settings.temp_dir) / session_id,
+            before=before,
+        )
+        revised_report.notes = [
+            *revised_report.notes,
+            _revision_note(revision_status, use_llm and provider is not None),
+        ]
+        revised_document_id = store.save_document(
+            session_id, revised_document.source_name, revised_document.model_dump_json()
+        )
+        store.save_report(session_id, revised_document_id, revised_report.report_id, revised_report.model_dump_json())
+        audit("compare_autorevised", source_report_id=payload.before_report_id, revised_report_id=revised_report.report_id)
+        return _build_response(before, revised_report)
+
+    job_id = submit(
+        "compare",
+        session_id,
+        {"before_report_id": payload.before_report_id, "after_report_id": payload.after_report_id},
+        _run,
     )
-    after.notes = [*after.notes, _revision_note(revision_status, use_llm and provider is not None)]
-    revised_document_id = store.save_document(
-        session_id, revised_document.source_name, revised_document.model_dump_json()
-    )
-    store.save_report(session_id, revised_document_id, after.report_id, after.model_dump_json())
-    audit("compare_autorevised", source_report_id=payload.before_report_id, revised_report_id=after.report_id)
-    return _build_response(before, after)
+    return {"task_id": job_id, "state": "queued", "kind": "compare", "poll_url": f"/tasks/{job_id}"}
