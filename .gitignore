@@ -65,3 +65,6 @@ submit/
 # 用户论文的衍生物（盲测分析报告与标注元数据）：与原件同理，不随公开仓库分发
 docs/evaluation/blind-tests/
 samples/ground_truth/blind-*.json
+
+# 逐要素标注（同样派生自用户论文）
+samples/ground_truth/elements/blind-*.json
