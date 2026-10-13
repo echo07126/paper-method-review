@@ -1,4 +1,8 @@
-"""一致性核查：后端实际路由 vs 前端调用 vs 文档记录；关键字段与指标口径核对。"""
+"""一致性核查：后端实际路由 vs 前端调用 vs 文档记录；关键字段与指标口径核对。
+
+路由来源优先取运行中的后端（`/openapi.json`，即真实部署形态）；连不上时退回进程内
+`create_app().openapi()`。此前未起服务会把**所有**前端调用判为不匹配，结论不可用。
+"""
 import json
 import re
 import sys
@@ -7,15 +11,24 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
+OPENAPI_URL = "http://127.0.0.1:8000/openapi.json"
 
 
 def backend_paths() -> list[str]:
+    """返回后端真实路由列表（运行中后端优先，否则进程内 app）。"""
     try:
-        spec = httpx.get("http://127.0.0.1:8000/openapi.json", timeout=10).json()
-        return sorted(spec.get("paths", {}).keys())
+        response = httpx.get(OPENAPI_URL, timeout=5)
+        response.raise_for_status()
+        spec = response.json()
     except Exception as exc:  # noqa: BLE001
-        print("无法读取 OpenAPI：", exc)
-        return []
+        print(f"未连上 {OPENAPI_URL}（{exc}），改用进程内 create_app().openapi()")
+        if str(BACKEND) not in sys.path:
+            sys.path.insert(0, str(BACKEND))
+        from app.main import create_app
+
+        spec = create_app().openapi()
+    return sorted(spec.get("paths", {}).keys())
 
 
 def frontend_calls() -> set[str]:

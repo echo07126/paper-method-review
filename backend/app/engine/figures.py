@@ -3,8 +3,23 @@ import re
 
 from app.models.schemas import DocumentIR, Element, Finding, Severity, Verdict
 
+# 「图」「表」在中文里常出现在普通词语中（代表、试图、地图、发表、报表…），单字匹配会产生
+# 幻影图表引用。这些前置字构成的是词语而非图表，故用定长反向断言排除；
+# 注意不要误伤真正的图表词（插图 / 草图 / 挂图 / 截图 均以「图」结尾且成立，故未列入）。
+NOT_A_FIGURE_PREFIX = "代试地意版蓝力贪宏企略"
+NOT_A_TABLE_PREFIX = "代发报外手仪师华填图"
+# 编号后紧跟量词/单位时是「数量」而非图表编号（「代表3个模型」中的「表3」不是表引用）
+NUMBER_IS_A_QUANTITY = r"(?!\s*(?:个|种|类|名|例|次|篇|条|张|幅|台|只|人|年|月|日|周|%|％|个百分点))"
 FIGURE_REF_PATTERN = re.compile(
-    r"(图\s*\d+|图\s*[一二三四五六七八九十]+|附图\s*\d+|Figure\s*\d+|Fig\.?\s*\d+|表\s*\d+|Table\s*\d+|Supplementary\s+(?:Fig|Table))",
+    rf"(?<![{NOT_A_FIGURE_PREFIX}])图\s*\d+"
+    rf"|(?<![{NOT_A_FIGURE_PREFIX}])图\s*[一二三四五六七八九十]+"
+    rf"|附图\s*\d+"
+    rf"|Figure\s*\d+"
+    rf"|Fig\.?\s*\d+"
+    rf"|(?<![{NOT_A_TABLE_PREFIX}])表\s*\d+"
+    rf"|Table\s*\d+"
+    rf"|Supplementary\s+(?:Fig|Table)"
+    + NUMBER_IS_A_QUANTITY,
     re.IGNORECASE,
 )
 
@@ -34,12 +49,17 @@ def _table_anchor_indexes(document: DocumentIR | None) -> set[int]:
 
 
 def _evidence_in_tables(item_id: str, elements: list[Element] | None, table_indexes: set[int]) -> bool:
-    """该条目的支撑性要素是否已在表体中被抽取到（表格内容已被消费，结论可判定）。"""
+    """该条目的支撑性要素是否已在表体中被抽取到（表格内容已被消费，结论可判定）。
+
+    必须同时要求 `element.in_table`：表体要素的锚点就是表格上方正文段的段落序号，
+    只看锚点会把「表格上方段落里的证据」误判成表内证据，从而漏掉应有的降级。
+    """
     if not elements or not table_indexes:
         return False
     types = set(ITEM_EVIDENCE_TYPES.get(item_id, ()))
     return any(
-        element.type in types
+        element.in_table
+        and element.type in types
         and any(anchor.paragraph_index in table_indexes for anchor in element.anchors)
         for element in elements
     )

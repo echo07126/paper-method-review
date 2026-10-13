@@ -131,11 +131,13 @@ def extract_elements(document: DocumentIR) -> list[Element]:
         for row in table.rows:
             row_text = " | ".join(cell for cell in row if cell)
             if row_text.strip():
-                elements.extend(_match_sentence(anchor_index, None, row_text))
+                elements.extend(_match_sentence(anchor_index, None, row_text, in_table=True))
     return elements
 
 
-def _match_sentence(paragraph_index: int, sentence_index: int | None, text: str) -> list[Element]:
+def _match_sentence(
+    paragraph_index: int, sentence_index: int | None, text: str, in_table: bool = False
+) -> list[Element]:
     matched: list[Element] = []
     for element_type, patterns in PATTERNS.items():
         for pattern in patterns:
@@ -147,6 +149,7 @@ def _match_sentence(paragraph_index: int, sentence_index: int | None, text: str)
                         value=text.strip()[:160],
                         anchors=[Anchor(paragraph_index=paragraph_index, sentence_index=sentence_index)],
                         confidence=0.8,
+                        in_table=in_table,
                     )
                 )
                 break

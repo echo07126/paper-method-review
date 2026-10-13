@@ -6,7 +6,7 @@ from typing import Protocol
 
 import httpx
 
-from app.core.logging import safe_logger
+from app.core.logging import key_fingerprint, safe_logger
 
 
 class LLMUnavailable(RuntimeError):
@@ -72,6 +72,8 @@ class DeepSeekProvider:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self._semaphore = _semaphore_for(max_concurrency)
+        # 指纹只用于日志标识，不含任何密钥字符
+        self.key_fingerprint = key_fingerprint(api_key)
 
     def _post(self, payload: dict) -> tuple[dict, str]:
         with self._semaphore:
@@ -87,10 +89,10 @@ class DeepSeekProvider:
     def _log_call(self, mode: str, payload: dict, trace_id: str, started: float, attempt: int) -> None:
         usage = payload.get("usage", {})
         safe_logger().info(
-            "llm_call mode=%s model=%s key_tail=%s response_id=%s trace_id=%s tokens_in=%s tokens_out=%s duration_ms=%s retries=%s",
+            "llm_call mode=%s model=%s key_fp=%s response_id=%s trace_id=%s tokens_in=%s tokens_out=%s duration_ms=%s retries=%s",
             mode,
             self.model,
-            self.api_key[-6:],
+            self.key_fingerprint,
             payload.get("id"),
             trace_id,
             usage.get("prompt_tokens", 0),

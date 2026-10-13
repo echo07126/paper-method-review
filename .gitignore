@@ -11,12 +11,15 @@ __pycache__/
 venv/
 *.egg-info/
 
-# --- P0 合规：禁止入库的材料 ---
-# 用户提供的原始论文（非开放许可）及其衍生产物
+# --- P0 合规：不进入公开仓库的材料 ---
+# 注意：本节约束范围**仅限 git**——目的是避免把未发表的论文随公开仓库分发，
+# 不等于「不能用于参赛材料」。团队已确认这批论文可用于参赛材料（含界面截图与演示视频），
+# 依据见 samples/ground_truth/blind-004.json 的 license / note 字段。
+# 用户提供的原始论文及其衍生产物
 samples/real/raw/
-# 由用户论文复制而来的盲测件（同样不得入库；本地由 samples/real/raw/ 生成，CI 不依赖）
+# 由用户论文复制而来的盲测件（同样不进公开仓库；本地由 samples/real/raw/ 生成，CI 不依赖）
 samples/real/blind-*.docx
-# 从用户论文中抽取的插图（派生于原始论文，同样不得入库）
+# 从用户论文中抽取的插图（派生于原始论文，同样不进公开仓库）
 samples/real/*_media/
 # 评测样本目录下任何随审查生成的媒体落盘产物
 **/_media/
@@ -24,6 +27,8 @@ samples/real/*_media/
 # --- 测试临时产物 ---
 .pytest-tmp/
 .pytest_cache/
+# pytest 临时根目录（backend/tests/conftest.py 固定到仓库内，避免系统临时区不可用）
+.pytest-basetemp/
 # 运行时数据（论文/报告/临时文件不得入库）
 data/
 logs/
@@ -46,3 +51,13 @@ release/
 .DS_Store
 Thumbs.db
 .commitmsg*.txt
+
+# --- 参赛与交付材料（存放于网盘，不进公开仓库）---
+# 参赛作品材料本体、报名系统提交物（release/ 已在上面排除）
+materials/
+submit/
+# --- 归档目录：团队内部文档 / 材料构建脚本 ---
+无关文件/
+无关代码/
+# 大文件（GitHub 单文件上限 100 MB）
+*.mp4

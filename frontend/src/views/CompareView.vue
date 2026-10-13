@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import client from "@/api/client";
-import { submitAndPoll } from "@/api/tasks";
+import { submitAndPoll, type PollPromise } from "@/api/tasks";
 import type { CompareFinding, CompareResponse, DocumentResponse, ReviewReport, ReportSummary } from "@/api/types";
 import PaperPreview from "@/components/PaperPreview.vue";
 import SeverityChip from "@/components/SeverityChip.vue";
@@ -24,9 +24,10 @@ const activeSide = ref<"before" | "after">("before");
 const activeId = ref<string | null>(null);
 const beforeParagraphs = ref<Array<{ index: number; text: string }>>([]);
 const afterParagraphs = ref<Array<{ index: number; text: string }>>([]);
-const revisedReport = ref<ReviewReport | null>(null);
 const beforeWorkbench = ref<HTMLElement | null>(null);
 const afterWorkbench = ref<HTMLElement | null>(null);
+/** 在途对比任务的轮询句柄；卸载时取消，避免回包写进已离开的页面。 */
+let pending: PollPromise<CompareResponse> | null = null;
 
 function label(report: ReportSummary): string {
   const counts = report.counts ?? {};
@@ -76,11 +77,11 @@ onMounted(async () => {
   loading.value = true;
   loadingStage.value = "正在读取报告…";
   try {
-    const { data } = await client.get<ReportSummary[]>("/reports");
-    reports.value = data;
-    store.setReports(data);
+    // 复用 store 的报告缓存（历史页/对比页共用同一份列表，避免各拉一次）
+    const list = await store.fetchReports();
+    reports.value = list;
     beforeId.value =
-      (route.query.before as string) || store.reportId || data[0]?.report_id || "";
+      (route.query.before as string) || store.reportId || list[0]?.report_id || "";
     // 默认不预选「修改后」报告：留空即走「按示范改写自动生成修改稿并二次审查」这条主线，
     // 否则页面会拿两份既有（均未修改）报告互比，看起来「改了却没变化」。
     // 确需比较两份既有报告时，由用户在下拉框手动选择。
@@ -118,39 +119,68 @@ async function compare() {
     : "已提交修改稿生成任务（约 1–3 分钟，本页自动轮询结果）…";
   // 记录提交前已有的报告 id：二次审查会新建报告，据此识别新生成的那份
   const knownIds = new Set(reports.value.map((item) => item.report_id));
+  // 记录提交时的初稿选择：任务跑完可能已过 1–3 分钟，期间用户若换了初稿，
+  // 结果就属于另一份稿件，直接丢弃而不是把它画到当前选择上。
+  const submittedBefore = beforeId.value;
+  const submittedAfter = afterId.value;
   try {
     // 对比为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取结果，不再挂长连接。
-    const data = await submitAndPoll<CompareResponse>("/compare", {
-      before_report_id: beforeId.value,
-      after_report_id: afterId.value || null,
-      use_llm: afterId.value ? false : useLlm.value,
-    });
+    pending = submitAndPoll<CompareResponse>(
+      "/compare",
+      {
+        before_report_id: submittedBefore,
+        after_report_id: submittedAfter || null,
+        use_llm: submittedAfter ? false : useLlm.value,
+      },
+      {
+        // 把服务端真实阶段回显到进度条文案：等待 1–3 分钟时用户能看到任务确实在推进
+        onState: (state) => {
+          if (state === "queued") {
+            loadingStage.value = "任务已入队，等待执行…";
+          } else if (state === "running") {
+            loadingStage.value = submittedAfter
+              ? "正在对比两份报告…"
+              : "正在生成修改稿并做二次审查（约 1–3 分钟）…";
+          }
+        },
+      },
+    );
+    const data = await pending;
+    if (beforeId.value !== submittedBefore) {
+      error.value = "对比结果已忽略：任务执行期间「修改前」报告被切换，请重新对比。";
+      return;
+    }
     result.value = data;
     activeSide.value = "before";
     activeId.value = data.before_findings[0]?.checklist_item_id ?? null;
-    revisedReport.value = null;
-    if (!afterId.value) {
-      const list = await client.get<ReportSummary[]>("/reports");
-      reports.value = list.data;
-      store.setReports(list.data);
+    if (!submittedAfter) {
+      const list = await store.fetchReports();
+      reports.value = list;
       // 认「提交前不存在的那份报告」为新生成结果，避免多份历史时误选旧报告
-      const generated = list.data.find((item) => !knownIds.has(item.report_id)) ?? null;
+      const generated = list.find((item) => !knownIds.has(item.report_id)) ?? null;
       if (generated) {
         afterId.value = generated.report_id;
-        const detail = await client.get<ReviewReport>(`/reports/${generated.report_id}`);
-        revisedReport.value = detail.data;
-        afterParagraphs.value = await documentParagraphs(generated.document_id);
+        // 修改稿有自己的 document_id：不同步到 store 的话，「回到报告」会把
+        // 修改稿的结论并排显示在未修改的原稿正文上。
+        const revisedDocumentId = data.document_id ?? generated.document_id;
+        if (revisedDocumentId) store.setDocument(revisedDocumentId);
+        afterParagraphs.value = await documentParagraphs(revisedDocumentId);
       }
     } else {
-      revisedReport.value = null;
       await loadPapers(null);
     }
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
+    pending = null;
     loading.value = false;
   }
 }
+
+onUnmounted(() => {
+  pending?.cancel();
+  pending = null;
+});
 
 async function locate(side: "before" | "after", finding: CompareFinding) {
   activeSide.value = side;
@@ -211,7 +241,7 @@ function statusLabel(status?: string): string {
     <div class="selectors">
       <label class="selector">
         <span class="lbl">修改前 · 初稿</span>
-        <select v-model="beforeId">
+        <select v-model="beforeId" :disabled="loading">
           <option value="">请选择报告</option>
           <option v-for="report in reports" :key="report.report_id" :value="report.report_id">
             {{ label(report) }}
@@ -220,7 +250,7 @@ function statusLabel(status?: string): string {
       </label>
       <label class="selector">
         <span class="lbl">修改后 · 修改稿</span>
-        <select v-model="afterId">
+        <select v-model="afterId" :disabled="loading">
           <option value="">默认：按示范改写自动生成并二次审查</option>
           <option v-for="report in reports" :key="report.report_id" :value="report.report_id">
             {{ label(report) }}
@@ -257,7 +287,7 @@ function statusLabel(status?: string): string {
           </span>
         </div>
         <div class="cmp-list">
-          <div v-for="finding in beforeFindings" :key="finding.checklist_item_id" class="cmp-row">
+          <div v-for="(finding, index) in beforeFindings" :key="`${finding.checklist_item_id}-${index}`" class="cmp-row">
             <button
               class="cmp-f"
               :class="{ active: activeSide === 'before' && activeId === finding.checklist_item_id }"
@@ -291,7 +321,7 @@ function statusLabel(status?: string): string {
           </span>
         </div>
         <div class="cmp-list">
-          <div v-for="finding in afterFindings" :key="finding.checklist_item_id" class="cmp-row">
+          <div v-for="(finding, index) in afterFindings" :key="`${finding.checklist_item_id}-${index}`" class="cmp-row">
             <button
               class="cmp-f"
               :class="{ active: activeSide === 'after' && activeId === finding.checklist_item_id }"

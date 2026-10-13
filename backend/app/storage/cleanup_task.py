@@ -6,7 +6,8 @@
   共享存储 + 单一调度（已在运维文档中登记为已知取舍）。
 - 不引入 APScheduler 等新依赖：用 asyncio 原生任务，保持依赖面最小。
 - 异常隔离：单轮清理失败不影响后续轮次，也不影响服务主流程。
-- 优雅退出：收到取消信号时记录日志后正常结束，不抛出 CancelledError。
+- 优雅退出：收到取消信号时记录日志并把 `CancelledError` 继续向上抛（吞掉它会让
+  asyncio 认为任务已正常结束，取消语义失效）；`app.main.lifespan` 负责接住并忽略。
 """
 import asyncio
 

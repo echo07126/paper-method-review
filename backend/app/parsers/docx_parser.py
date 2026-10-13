@@ -22,13 +22,28 @@ from app.models.schemas import (
 from app.parsers.base import ParseError, ParserCapabilities
 
 REFERENCE_TITLES = {"references", "bibliography", "参考文献", "文献", "references and notes"}
+# 参考文献章节标题在真实论文里常带章节编号/全角括号（「7 References」「6 参考文献」
+# 「参考文献（References）」）。先剥掉编号前缀、括注与收尾标点再比对，否则整段引用对账
+# 会因标题写法不同而整体失效（表现为全部引用「悬空」+ 误报「未识别到参考文献列表」）。
+REFERENCE_HEADING_PREFIX = re.compile(
+    r"^\s*(?:\d+(?:\.\d+)*|[一二三四五六七八九十]+|[IVXivx]+)\s*[\.、．:：]?\s*"
+)
+REFERENCE_HEADING_TAIL = re.compile(r"[\s。．.:：、]+$")
+REFERENCE_HEADING_INLINE = re.compile(r"[（(][^（()）]*[)）]")
 # 中文断句：中文终止符（。！？；）后直接断句，无需空白；西文 .!? 仅在“非数字 + 后接空白 + 下一句以大写/CJK 起”时断句，
 # 既修掉“中文段落永不切句”（原正则要求终止符后必须有空白），也避免把 “2. 方法”“0.912” 切成独立句。
 SENTENCE_SPLIT = re.compile(r"(?<=[。！？；])|(?<![0-9][.?!])(?<=[.?!])\s+(?=[A-Z\u4e00-\u9fff“\"'(])")
 BRACKET_TOKEN = re.compile(r"\[[^\[\]]+\]")
 RANGE_OR_NUMBER = re.compile(r"\d+(?:\s*[-–—]\s*\d+)?")
-REFERENCE_ITEM = re.compile(r"^\s*\[?(\d+)\]?[\.\、\．\:\)]?\s+")
-CITATION_BRACKET = re.compile(r"^\[\s*[\d\s,，\-–—]+\s*\]$")
+# 参考文献条目编号，兼容三种常见写法（分组区分，取首个非空分组）：
+#   [1]/［1］  括号式，编号后允许无空白（GB/T 7714、CNKI 导出风格「[1]张三…」）
+#   1./1、/1)/1： 分隔符式
+#   1 后接空白     裸编号式
+REFERENCE_ITEM = re.compile(
+    r"^\s*(?:[\[［]\s*(\d+)\s*[\]］]|(\d+)\s*[\.、．:：\)）]|(\d+)(?=\s))"
+)
+# 允许一个上标内并排多个方括号引用（「[1][2]」「[1-2][5]」），分隔符兼容中英文顿号/分号
+CITATION_BRACKET = re.compile(r"^(?:\[\s*[\d\s,，、;；\-–—]+\s*\])+$")
 BARE_CITATION = re.compile(r"^\d{1,3}$")
 MATH_PREV = set(")]}〉」】‖|·×+-=/")
 
@@ -76,10 +91,45 @@ def is_citation_span(span: str, prev_char: str, next_char: str) -> bool:
     if BARE_CITATION.match(span):
         if prev_char and (prev_char.isalnum() or prev_char in MATH_PREV):
             return False
-        if next_char and next_char in MATH_PREV + "%":
+        # 注意：MATH_PREV 是 set，不能与字符串相加（set + str 会抛 TypeError）
+        if next_char and (next_char == "%" or next_char in MATH_PREV):
             return False
         return True
     return False
+
+
+def _detect_language(text: str) -> str:
+    """粗粒度语种判定：CJK 字符不少于拉丁字母即视为中文。
+
+    该字段此前始终是默认值 "zh"（从未被赋值），下游若据它切换提示词/规则会一直走中文分支。
+    这里给出一个可解释的判定：以「汉字数 ≥ 拉丁字母数」为中文，其余为英文；
+    两种字符都不存在时按中文处理（本项目面向中文写作）。
+    """
+    han = len(re.findall(r"[\u4e00-\u9fff]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    return "en" if latin > han else "zh"
+
+
+def _reference_number(text: str) -> int | None:
+    """从参考文献条目文本中取出编号；取首个非空分组（括号式 / 分隔符式 / 裸编号式）。"""
+    match = REFERENCE_ITEM.match(text)
+    if not match:
+        return None
+    for group in match.groups():
+        if group:
+            return int(group)
+    return None
+
+
+def _is_reference_heading(text: str) -> bool:
+    """参考文献章节标题判定：容忍章节编号、全角括号括注与收尾标点。"""
+    normalized = REFERENCE_HEADING_TAIL.sub("", REFERENCE_HEADING_PREFIX.sub("", text.strip()))
+    if normalized.lower() in REFERENCE_TITLES:
+        return True
+    without_inline = REFERENCE_HEADING_TAIL.sub(
+        "", REFERENCE_HEADING_INLINE.sub("", normalized).strip()
+    )
+    return without_inline.lower() in REFERENCE_TITLES
 
 
 def split_sentences(text: str) -> list[Sentence]:
@@ -130,8 +180,14 @@ def _numbering_level(text: str) -> int | None:
     return 1
 
 
-def _looks_like_heading(text: str, style_name: str, runs) -> tuple[bool, int, str]:
-    """样式缺失时的兜底判定：编号前缀 / 章节关键词 / 全加粗 / 字号偏大。"""
+def _looks_like_heading(
+    text: str, style_name: str, runs, body_size: float | None = None
+) -> tuple[bool, int, str]:
+    """样式缺失时的兜底判定：编号前缀 / 章节关键词 / 全加粗 / 字号偏大。
+
+    `body_size` 由调用方显式传入而非读取模块级状态：解析在线程池中并发执行，
+    模块级状态会让并发上传互相污染标题判定。
+    """
     stripped = text.strip()
     if not stripped or len(stripped) > HEURISTIC_MAX_LENGTH:
         return False, 1, ""
@@ -142,12 +198,14 @@ def _looks_like_heading(text: str, style_name: str, runs) -> tuple[bool, int, st
 
     numbered = _numbering_level(stripped)
     keyword = any(stripped.lower().startswith(word) or stripped.lower() == word for word in SECTION_KEYWORDS)
-    all_bold = bool(runs) and all(run.bold for run in runs if run.text.strip())
+    # 只对「有文字」的 run 判定加粗：all() 作用于空序列恒为 True，
+    # 会把「仅含制表符 + 公式」的段落误判为标题。
+    text_runs = [run for run in runs if run.text.strip()]
+    all_bold = bool(text_runs) and all(run.bold for run in text_runs)
     bigger = False
     sizes = [run.font.size.pt for run in runs if run.font.size is not None and run.text.strip()]
-    if sizes:
-        body = _BODY_SIZE[0]
-        if body and max(sizes) >= body * 1.15:
+    if sizes and body_size:
+        if max(sizes) >= body_size * 1.15:
             bigger = True
 
     if numbered is not None or keyword or all_bold or bigger:
@@ -157,10 +215,8 @@ def _looks_like_heading(text: str, style_name: str, runs) -> tuple[bool, int, st
     return False, 1, ""
 
 
-_BODY_SIZE: list[float | None] = [None]
-
-
-def _estimate_body_size(document) -> None:
+def _estimate_body_size(document) -> float | None:
+    """正文字号估计（众数）。返回而非写入模块级状态，见 `_looks_like_heading` 的说明。"""
     sizes: list[float] = []
     for paragraph in document.paragraphs:
         style = paragraph.style.name or ""
@@ -169,20 +225,36 @@ def _estimate_body_size(document) -> None:
         for run in paragraph.runs:
             if run.font.size is not None and run.text.strip():
                 sizes.append(round(run.font.size.pt, 1))
-    _BODY_SIZE[0] = Counter(sizes).most_common(1)[0][0] if sizes else None
+    return Counter(sizes).most_common(1)[0][0] if sizes else None
+
+
+# 正文流包装元素：内部的 run 同属正文，必须递归展开，否则其文本整段丢失
+# （`Paragraph.text` 是包含超链接文本的，直接遍历 `w:p` 子节点会漏掉 `w:hyperlink`）。
+FLOW_CONTAINER_TAGS = frozenset(
+    {qn("w:hyperlink"), qn("w:ins"), qn("w:smartTag"), qn("w:sdt"), qn("w:sdtContent")}
+)
+
+
+def _iter_flow(container, parent):
+    """按文档流顺序产出 ("run", Run) / ("math", XML node)，递归展开包装元素。"""
+    for child in container:
+        if child.tag == RUN_TAG:
+            yield "run", Run(child, parent)
+        elif child.tag in MATH_TAGS:
+            yield "math", child
+        elif child.tag in FLOW_CONTAINER_TAGS:
+            yield from _iter_flow(child, parent)
 
 
 def _paragraph_chunks(paragraph) -> list[tuple[str, bool, Run | None]]:
     """按文档流顺序切分段落：普通 run 保留上标标记，OMML 公式转为纯文本块（run 为 None）。"""
-    run_map = {run._r: run for run in paragraph.runs}
     chunks: list[tuple[str, bool, Run | None]] = []
-    for child in paragraph._p:
-        if child.tag == RUN_TAG:
-            run = run_map.get(child)
-            if run is not None:
-                chunks.append((run.text, bool(run.font.superscript), run))
-        elif child.tag in MATH_TAGS:
-            text = "".join(node.text or "" for node in child.iter(MATH_TEXT_TAG))
+    for kind, node in _iter_flow(paragraph._p, paragraph):
+        if kind == "run":
+            if node.text:
+                chunks.append((node.text, bool(node.font.superscript), node))
+        else:
+            text = "".join(part.text or "" for part in node.iter(MATH_TEXT_TAG))
             if text.strip():
                 chunks.append((text, False, None))
     return chunks
@@ -209,8 +281,11 @@ def _build_table(table: DocxTable, index: int, caption: str, anchor_index: int) 
         cells: list[str | None] = []
         previous_tc = None
         for column, cell in enumerate(current_row):
+            # 横向合并用同一个 `_tc` 连续出现判定；纵向合并须比较底层 `_tc`：
+            # python-docx 每次访问 `row.cells` 都会新建 `_Cell` 包装对象，
+            # 用 `cell is previous_row[column]` 恒为 False，纵合并永远识别不出来（内容重复）。
             merged = (previous_tc is not None and cell._tc is previous_tc) or (
-                column < len(previous_row) and cell is previous_row[column]
+                column < len(previous_row) and cell._tc is previous_row[column]._tc
             )
             cells.append(None if merged else " ".join(cell.text.split()))
             previous_tc = cell._tc
@@ -231,12 +306,33 @@ def _build_table(table: DocxTable, index: int, caption: str, anchor_index: int) 
     )
 
 
+# 图片题注搜索窗口：先向下（图题在图片下方，中文期刊惯例，与表题在上方相反），
+# 找不到再向上（部分英文期刊与 IEEE 模板把图题放在图上方）。两向都必须匹配题注版式。
+_CAPTION_LOOKAHEAD = 3
+_CAPTION_LOOKBEHIND = 2
+
+
 def _image_caption(paragraphs: list[Paragraph], anchor_index: int) -> tuple[str, int | None]:
-    """图片题注：图题通常紧邻图片下方（与表题在上方相反），故向后找 3 段。"""
-    for paragraph in paragraphs:
-        if anchor_index < paragraph.index <= anchor_index + 3 and CAPTION_PATTERN.match(paragraph.text.strip()):
-            return paragraph.text.strip(), paragraph.index
-    return "", None
+    """图片题注：先向下找 3 段，再向上找 2 段；两向都要求段落匹配 `CAPTION_PATTERN`。
+
+    只认「以 图N/表N/Fig N/Table N 开头」的段落，因此正文里顺带提到图号的句子
+    （「如图3所示，模型表现更好。」）不会被误当成题注。
+    本仓库 16 篇样本实测：题注全部位于图片下方且全部识别成功；向上分支属版式稳健性补充，
+    不改变既有样本的识别结果。
+    """
+    by_index = {paragraph.index: paragraph for paragraph in paragraphs}
+
+    def find(start: int, stop: int, step: int) -> tuple[str, int | None]:
+        for index in range(start, stop, step):
+            paragraph = by_index.get(index)
+            if paragraph is not None and CAPTION_PATTERN.match(paragraph.text.strip()):
+                return paragraph.text.strip(), paragraph.index
+        return "", None
+
+    found = find(anchor_index + 1, anchor_index + _CAPTION_LOOKAHEAD + 1, 1)
+    if found[1] is not None:
+        return found
+    return find(anchor_index - 1, anchor_index - _CAPTION_LOOKBEHIND - 1, -1)
 
 
 def _nearest_paragraph_index(paragraphs: list[Paragraph], block_index: int) -> int:
@@ -303,7 +399,7 @@ class DocxParser:
         except Exception as exc:  # noqa: BLE001 - 统一转为解析错误
             raise ParseError("docx_parse_failed", f"DOCX 解析失败：{exc}") from exc
 
-        _estimate_body_size(document)
+        body_size = _estimate_body_size(document)
 
         paragraphs: list[Paragraph] = []
         tables: list[Table] = []
@@ -347,7 +443,7 @@ class DocxParser:
             if style_heading:
                 is_heading, level = True, _style_level(style)
             else:
-                is_heading, level, _reason = _looks_like_heading(text, style, run_objects)
+                is_heading, level, _reason = _looks_like_heading(text, style, run_objects, body_size)
                 if is_heading:
                     heuristic_headings += 1
                     if not style or style == "Normal":
@@ -357,7 +453,15 @@ class DocxParser:
             )
             if is_heading:
                 sections.append(
-                    Section(id=new_id("sec"), title=text.strip(), level=level, paragraph_index=current, confidence=1.0 if style_heading else 0.7)
+                    Section(
+                        id=new_id("sec"),
+                        title=text.strip(),
+                        level=level,
+                        paragraph_index=current,
+                        confidence=1.0 if style_heading else 0.7,
+                        # 启发式（非 Word 样式）标题的章节边界不可靠，交由前端提示人工确认
+                        needs_review=not style_heading,
+                    )
                 )
             buffer = ""
             current_sup: list[str] = []
@@ -383,14 +487,13 @@ class DocxParser:
 
         ref_start = len(paragraphs)
         for position, paragraph in enumerate(paragraphs):
-            if paragraph.is_heading and paragraph.text.strip().lower() in REFERENCE_TITLES:
+            if paragraph.is_heading and _is_reference_heading(paragraph.text):
                 ref_start = position
                 break
         references: dict[int, ReferenceEntry] = {}
         for paragraph in paragraphs[ref_start + 1:]:
-            match = REFERENCE_ITEM.match(paragraph.text)
-            if match:
-                number = int(match.group(1))
+            number = _reference_number(paragraph.text)
+            if number is not None:
                 references[number] = ReferenceEntry(
                     number=number, text=paragraph.text.strip(), anchor=Anchor(paragraph_index=paragraph.index)
                 )
@@ -430,6 +533,7 @@ class DocxParser:
             source_name=path.name,
             parser=self.name,
             parser_version=self.version,
+            language=_detect_language("\n".join(paragraph.text for paragraph in paragraphs)),
             sections=sections,
             paragraphs=paragraphs,
             tables=tables,

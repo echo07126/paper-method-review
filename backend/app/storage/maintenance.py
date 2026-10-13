@@ -46,19 +46,12 @@ def cleanup_expired(db_path: str, temp_dir: str, retention_hours: int | None = N
         retention_hours = max(settings.data_retention_hours, settings.session_ttl_hours)
     cutoff = (now - timedelta(hours=retention_hours)).isoformat()
 
+    removed_jobs = 0
     connection = connect(db_path)
     try:
-        rows = connection.execute("SELECT id FROM sessions WHERE expires_at < ? OR created_at < ?", (now.isoformat(), cutoff)).fetchall()
-        expired_ids = [row["id"] for row in rows]
-        _purge_session_rows(connection, expired_ids)
-        # 兜底自愈：清理任何已无对应会话的残留行（覆盖并发写入竞态产生的孤儿数据）。
-        # 逐表写死语句，表名不参与拼接。
-        connection.execute("DELETE FROM chat_messages WHERE session_id NOT IN (SELECT id FROM sessions)")
-        connection.execute("DELETE FROM reports WHERE session_id NOT IN (SELECT id FROM sessions)")
-        connection.execute("DELETE FROM documents WHERE session_id NOT IN (SELECT id FROM sessions)")
-        connection.execute("DELETE FROM jobs WHERE session_id NOT IN (SELECT id FROM sessions)")
-        # 任务生命周期（TASK_RETENTION_MINUTES）：终态任务超过保留期即清除；
+        # 任务生命周期（TASK_RETENTION_MINUTES）先跑：终态任务超过保留期即清除；
         # 僵尸任务（进程被杀后永远 queued/running）按创建时间兜底清除。
+        # 先清理再挑会话，使「只剩僵尸任务的过期会话」能在同一轮被回收。
         job_cutoff = (now - timedelta(minutes=settings.task_retention_minutes)).isoformat()
         finished = connection.execute(
             "DELETE FROM jobs WHERE state IN ('succeeded', 'failed') AND updated_at < ?", (job_cutoff,)
@@ -67,6 +60,25 @@ def cleanup_expired(db_path: str, temp_dir: str, retention_hours: int | None = N
             "DELETE FROM jobs WHERE state IN ('queued', 'running') AND created_at < ?", (job_cutoff,)
         )
         removed_jobs = (finished.rowcount or 0) + (stale.rowcount or 0)
+
+        rows = connection.execute("SELECT id FROM sessions WHERE expires_at < ? OR created_at < ?", (now.isoformat(), cutoff)).fetchall()
+        expired_ids = [row["id"] for row in rows]
+        # 仍在执行任务的会话本轮跳过：任务收尾时会写回 jobs/reports，若此时会话行已删除，
+        # 结果会写进已删除的 job（对前端等于静默丢失）并留下孤儿报告行。
+        running_sessions = {
+            row["session_id"]
+            for row in connection.execute(
+                "SELECT DISTINCT session_id FROM jobs WHERE state = 'running'"
+            ).fetchall()
+        }
+        expired_ids = [session_id for session_id in expired_ids if session_id not in running_sessions]
+        _purge_session_rows(connection, expired_ids)
+        # 兜底自愈：清理任何已无对应会话的残留行（覆盖并发写入竞态产生的孤儿数据）。
+        # 逐表写死语句，表名不参与拼接。
+        connection.execute("DELETE FROM chat_messages WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM reports WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM documents WHERE session_id NOT IN (SELECT id FROM sessions)")
+        connection.execute("DELETE FROM jobs WHERE session_id NOT IN (SELECT id FROM sessions)")
         connection.commit()
     finally:
         connection.close()

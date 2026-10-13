@@ -4,17 +4,17 @@
 
 ## 当前状态
 
-> 指标口径统一以 `python backend/scripts/eval_ac.py` 的实际输出为准（数据截至 2026-10-10）。
+> 指标口径统一以 `python backend/scripts/eval_ac.py` 的实际输出为准（数据截至 2026-10-12）。
 
 | 门禁 | 结果 | 说明 |
 | --- | --- | --- |
-| 评测集 | 16 篇 / 82 条标准答案（本地全量） | fixtures 5、real 7、review 2、empirical 1、planted 1；盲测件由 `samples/real/raw/` **本地生成、不入库**，CI 在 tracked 子集 **12 篇 / 68 条**上运行（68/68 = 100%） |
+| 评测集 | 16 篇 / 82 条标准答案（本地全量） | fixtures 5、real 7、review 2、empirical 1、planted 1；盲测件由 `samples/real/raw/` **本地生成、不进公开仓库**，持续集成在公开子集 **12 篇 / 68 条**上运行（68/68 = 100%） |
 | AC-2 检出 | **82/82 = 100%** | 规则引擎模式；`--llm` 模型采信模式同为 82/82 |
 | 精确率 | **82/82 = 100%**（规则）/ **99%**（`--llm`） | `--llm` 模型侧新增 1 条 R-06 误报 |
 | AC-3 定位 | **79/82 = 96%** | 容差 ±1 段 |
 | 要素抽取 | **P/R/F1 均 90%** | 16 篇「文档 × 要素类型」级标注实测（`ablation.py`） |
-| 并发负载 | **1~16 路零失败、加速比约 1.00→1.64** | 进程内 ASGI（`load_check.py`，每档 10 轮，审查为任务模式提交 + 轮询）；8 路墙钟 0.70 s、16 路 1.24 s |
-| 单元测试 | **127 passed** | `pytest backend/tests -q` |
+| 并发负载 | **1~16 路零失败、加速比约 1.00→1.50** | 进程内 ASGI（`load_check.py`，每档 10 轮，审查为任务模式提交 + 轮询）；8 路墙钟 0.63 s、16 路 1.33 s（16 路审查 p50 524 ms、p95 1341 ms，属队列等待） |
+| 单元测试 | **173 项**（后端 160 + 前端 13） | `pytest`（后端，含 33 项缺陷回归）/ `npm run test`（前端，`node --test` 零新增依赖） |
 | 安全核查 | **33/33** | `security_audit.py` |
 | 本地交付核查 | **8/8 就绪**（5 已内置 + 3 不适用） | 交付形态为本地 Docker 包、不上公网；`deploy_gate.py` 返回 0 |
 | 二期进度 | **P2-1 / P2-2 / P2-3 / P2-4 已完成** | 表体结构化 + OMML 公式提取 + L1 图-文一致性 + L3 图像内容识读 + 追问多轮上下文 |
@@ -71,7 +71,7 @@ Compose 仅绑定本机回环端口；`data/` 为运行数据卷，`checklists/`
 ### 依赖锁定
 
 - 后端直接依赖在 `backend/requirements.txt` 中用 `==` 固定版本，开发依赖在根 `requirements.txt` 中同样固定；CI、镜像构建与本地安装共用同一份清单，避免「本地过、线上挂」。
-- 前端由 `frontend/package-lock.json` 锁定（已入库）。
+- 前端由 `frontend/package-lock.json` 锁定（已纳入版本控制）。
 - 升级依赖时先改清单再跑全套门禁（pytest / eval_ac / security_audit / api_check / 前端 build），确认无回归后再提交。
 
 ## 回归与上线门禁（开发仓库）
@@ -79,7 +79,8 @@ Compose 仅绑定本机回环端口；`data/` 为运行数据卷，`checklists/`
 > 以下命令在**开发仓库**执行；交付包不含 `backend/scripts`、`backend/tests` 与 `.github/`，运行方按《交付说明.md》启动即可。
 
 ```bash
-python -m pytest backend/tests -q
+python -m pytest               # 后端（在 paper-method-review/ 下；rootdir 与临时目录由 pytest.ini / conftest.py 固定）
+cd frontend && npm run test    # 前端单测（node --test，零新增依赖）
 python backend/scripts/eval_ac.py
 python backend/scripts/ablation.py --strict   # 消融：E/A/B/C/D 五配置 + 要素 P/R/F1（低于下限返回非零）
 python backend/scripts/load_check.py          # 负载：并发梯度 1~16 路延迟/吞吐/健康探针
@@ -96,8 +97,13 @@ python backend/scripts/deploy_gate.py
 - `api_check.py` 通过 `set_settings_override()` + `env_file=None` 子类做配置隔离，
   保证冒烟不写入真实 `data/`（末尾有断言自证）。
 - `deploy_gate.py` 核对《交付核查清单（本地 Docker 包）》（三态）：仅 `⬜ 需运行方完成` 返回 1，`✅ 已内置` / `➖ 不适用` 不计入阻塞。
+- `gen_api_doc.py` / `sync_check.py` 优先读运行中的后端 `/openapi.json`，未起服务时退回进程内
+  `create_app().openapi()`，因此不需要先启动服务即可生成接口文档 / 核对路由。
+- `consistency_check.py` 会**真实调用模型 API**（按量计费），须显式传 `--confirm-billing` 才执行，不在离线门禁内。
+- pytest 的临时根目录由 `backend/tests/conftest.py` 固定在仓库内（`.pytest-basetemp/`，已 gitignore），
+  避免系统临时区不可写/不可删导致的成批 `PermissionError`；需要改位置时照常传 `--basetemp=...` 覆盖。
 
-以上四项（pytest / eval_ac / security_audit / api_check）加前端 `npm run build`
+以上四项（pytest / eval_ac / security_audit / api_check）加前端 `npm run test` 与 `npm run build`
 均已纳入 `.github/workflows/ci.yml`，任一步失败即阻断合并。
 
 ## 项目结构
@@ -120,7 +126,7 @@ paper-method-review/                       # 本地 / 内网交付包（不上�
 └── README.md
 ```
 
-> 开发仓库另含 `docs/`（产品/工程/运维/评测文档）、`materials/`（参赛提交材料）、`samples/`（评测样本）、`backend/scripts`（评测与门禁工具）、`backend/tests` 与 `.github/`——这些**不进交付包**。
+> 仓库另含：`samples/`（评测样本与标准答案）、`backend/scripts`（评测与门禁工具）、`backend/tests`（回归测试）、`docs/`（产品 / 工程 / 运维 / 评测文档）、`.github/`（持续集成）与 `materials/`（参赛材料本体）。这些目录**不计入运行时交付包**——`build_release.ps1` 只拷贝运行必需文件。
 
 ## 交付
 

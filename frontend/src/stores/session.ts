@@ -1,19 +1,29 @@
 import { defineStore } from "pinia";
 
 import client from "@/api/client";
-import type { ReportSummary, Section } from "@/api/types";
+import type { ReportSummary, SectionSummary } from "@/api/types";
 
 export const useSessionStore = defineStore("session", {
   state: () => ({
     documentId: "" as string,
-    sections: [] as Section[],
+    sections: [] as SectionSummary[],
     warnings: [] as string[],
     reportId: "" as string,
-    tokensSummary: "" as string,
+    /**
+     * 逐报告记录 tokens 摘要。此前是单个全局字符串，打开历史报告时会把
+     * 上一次审查（可能是另一篇论文、另一种模型开关）的消耗说明显示在当前报告上。
+     */
+    tokensSummaryByReport: {} as Record<string, string>,
     reports: [] as ReportSummary[],
   }),
+  getters: {
+    /** 当前报告对应的 tokens 摘要；无匹配时返回空串（不显示）。 */
+    tokensSummary(state): string {
+      return state.reportId ? state.tokensSummaryByReport[state.reportId] ?? "" : "";
+    },
+  },
   actions: {
-    setUpload(documentId: string, sections: Section[], warnings: string[]) {
+    setUpload(documentId: string, sections: SectionSummary[], warnings: string[]) {
       this.documentId = documentId;
       this.sections = sections;
       this.warnings = warnings;
@@ -25,8 +35,8 @@ export const useSessionStore = defineStore("session", {
     setDocument(documentId: string) {
       this.documentId = documentId;
     },
-    setTokens(tokensSummary: string) {
-      this.tokensSummary = tokensSummary;
+    setTokens(reportId: string, tokensSummary: string) {
+      this.tokensSummaryByReport = { ...this.tokensSummaryByReport, [reportId]: tokensSummary };
     },
     setReports(reports: ReportSummary[]) {
       this.reports = reports;

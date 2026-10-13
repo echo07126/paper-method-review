@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
-import { submitAndPoll } from "@/api/tasks";
+import { submitAndPoll, type PollPromise } from "@/api/tasks";
 import type { ChatMessage, ChatResponse, Finding } from "@/api/types";
 
 const props = defineProps<{
@@ -26,6 +26,21 @@ const body = ref<HTMLElement | null>(null);
 /** 会话数据被清理后，用本地上下文继续追问（服务端仅在落库为空时采用）。 */
 let localHistory: ChatMessage[] = [];
 let messageSeq = 0;
+/**
+ * 会话世代：`reset()` 每次递增。追问是后台任务（轮询数秒到数十秒），
+ * 期间用户可能关闭抽屉或切到另一条 finding；入场时记下自己的世代，
+ * 回包时若世代已变则丢弃，避免上一轮的答案（或失败回滚）落进新一轮对话。
+ */
+let epoch = 0;
+/** 在途问答的轮询句柄；组件卸载时必须取消，避免回包写进已销毁的组件。 */
+let pending: PollPromise<ChatResponse> | null = null;
+
+/** 后端 `ChatRequest.question` 上限 500 字符，前缀（「（针对「…」）」）也占额度。 */
+const MAX_QUESTION_CHARS = 500;
+const questionPrefixLength = computed(() =>
+  props.finding ? `（针对「${props.finding.headline}」）`.length : 0,
+);
+const maxQuestionLength = computed(() => Math.max(1, MAX_QUESTION_CHARS - questionPrefixLength.value));
 
 function pushMessage(role: "user" | "assistant", content: string) {
   messages.value.push({ role, content, key: ++messageSeq });
@@ -65,35 +80,44 @@ function contextualQuestion(question: string): string {
 }
 
 async function send() {
-  const question = input.value.trim();
+  const question = input.value.trim().slice(0, maxQuestionLength.value);
   if (!question || loading.value) return;
   input.value = "";
   error.value = "";
   note.value = "";
   pushMessage("user", question);
   loading.value = true;
+  const mine = epoch;
   void scrollToBottom();
   try {
     // 问答为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取回答。
-    const data = await submitAndPoll<ChatResponse>(`/reports/${props.reportId}/chat`, {
+    pending = submitAndPoll<ChatResponse>(`/reports/${props.reportId}/chat`, {
       question: contextualQuestion(question),
       // 自由提问不绑定单条 finding，后端据此注入全文并记忆上下文
       finding_id: props.finding?.finding_id ?? null,
       history: localHistory,
     });
+    const data = await pending;
+    if (mine !== epoch || !props.open) return;
     pushMessage("assistant", data.answer);
     localHistory = data.history;
     truncated.value = data.truncated;
     scope.value = data.scope;
     if (data.note) note.value = data.note;
   } catch (err) {
+    // 世代已变时不回滚：乐观插入的提问属于上一轮，弹出会删掉新一轮的开场气泡
+    if (mine !== epoch || !props.open) return;
     // 请求失败：撤回乐观插入的提问并把内容还给输入框，避免留下无回复的孤立气泡
     messages.value.pop();
     input.value = question;
     error.value = (err as Error).message;
   } finally {
-    loading.value = false;
-    void scrollToBottom();
+    // 只有仍属当前世代时才复位，否则会把新一轮的 loading 提前清掉
+    if (mine === epoch) {
+      pending = null;
+      loading.value = false;
+      void scrollToBottom();
+    }
   }
 }
 
@@ -104,6 +128,9 @@ async function scrollToBottom() {
 }
 
 function reset() {
+  // 递增世代：把在途请求标记为过期，其回包不再写入本轮对话
+  epoch += 1;
+  loading.value = false;
   messages.value = [];
   localHistory = [];
   truncated.value = false;
@@ -133,6 +160,13 @@ watch(
     void scrollToBottom();
   },
 );
+
+onUnmounted(() => {
+  // 组件销毁：停掉在途轮询并把世代置为过期，回包不再写入任何状态
+  epoch += 1;
+  pending?.cancel();
+  pending = null;
+});
 </script>
 
 <template>
@@ -176,7 +210,7 @@ watch(
     <p v-if="error" class="error">{{ error }}</p>
 
     <form class="composer" @submit.prevent="send">
-      <input v-model="input" :placeholder="placeholder" :disabled="loading" />
+      <input v-model="input" :placeholder="placeholder" :maxlength="maxQuestionLength" :disabled="loading" />
       <button type="submit" :disabled="loading || !input.trim()">发送</button>
     </form>
   </aside>

@@ -19,7 +19,7 @@ from app.api import (
 )
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler, unhandled_error_handler
-from app.core.logging import safe_logger, setup_logging
+from app.core.logging import key_fingerprint, safe_logger, setup_logging
 from app.core.ratelimit import enforce as enforce_rate_limit
 from app.storage.cleanup_task import CLEANUP_INTERVAL_SECONDS, periodic_cleanup
 from app.storage.db import init_db
@@ -36,15 +36,16 @@ async def lifespan(app: FastAPI):
     env_key = os.environ.get("DEEPSEEK_API_KEY", "")
     effective_key = settings.deepseek_api_key
     if env_key and env_key != effective_key:
+        # 只比指纹：日志中不出现密钥字符（同一把 Key 指纹恒定，足以确认是否换用生效）
         safe_logger().warning(
-            "env_key_conflict: 环境变量 Key(尾号 %s) 与 .env(尾号 %s) 不一致，按 .env 生效；"
+            "env_key_conflict: 环境变量 Key(指纹 %s) 与 .env(指纹 %s) 不一致，按 .env 生效；"
             "如需彻底消除该环境变量，请在宿主应用/启动脚本层面清理后重启应用。",
-            env_key[-6:],
-            effective_key[-6:],
+            key_fingerprint(env_key),
+            key_fingerprint(effective_key),
         )
     safe_logger().info(
-        "llm_key_effective tail=%s model=%s base_url=%s",
-        effective_key[-6:],
+        "llm_key_effective key_fp=%s model=%s base_url=%s",
+        key_fingerprint(effective_key),
         settings.deepseek_model,
         settings.deepseek_base_url,
     )

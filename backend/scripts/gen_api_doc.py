@@ -1,10 +1,17 @@
-"""从运行中的后端 OpenAPI 生成接口文档（含人工核对的响应字段约定），保证文档与实现同步。"""
+"""从后端 OpenAPI 生成接口文档（含人工核对的响应字段约定），保证文档与实现同步。
+
+OpenAPI 来源优先取运行中的后端（`/openapi.json`，即真实部署形态）；连不上时退回
+进程内 `create_app().openapi()`，使文档生成不依赖「先起服务」这一步。
+"""
+import sys
 from pathlib import Path
 
 import httpx
 
 ROOT = Path(__file__).resolve().parents[2]
+BACKEND = ROOT / "backend"
 OUTPUT = ROOT / "docs" / "engineering" / "API接口说明.md"
+OPENAPI_URL = "http://127.0.0.1:8000/openapi.json"
 
 PURPOSE = {
     "/api/v1/health": "健康检查（存活与配置状态）",
@@ -32,8 +39,8 @@ RESPONSE_FIELDS = {
     "/api/v1/reports/{report_id}": "report_id, document_name, checklist_version, findings[], counts{}, duration_ms, tokens{}, notes[], figure_references, demote_on_figures",
     "/api/v1/reports/{report_id}/export": "Markdown 文本（PlainTextResponse）",
     "/api/v1/reports/{report_id}/chat": "任务 result（同旧同步响应体）：answer, source(llm|fallback), tokens?, note?, session_id, history[], truncated, scope",
-    "/api/v1/reports/{report_id}/revision": "任务 result：修改稿二次审查报告 report_id, document_name, findings[], counts{}, notes[], tokens{}",
-    "/api/v1/compare": "任务 result（同旧同步响应体）：before{}, after{}, resolved[], new[], kept[], before_findings[], after_findings[], resolved_findings[]",
+    "/api/v1/reports/{report_id}/revision": "任务 result：修改稿二次审查报告 report_id, document_id, document_name, findings[], counts{}, notes[], tokens{}",
+    "/api/v1/compare": "任务 result（同旧同步响应体）：before{}, after{}, resolved[], new[], kept[], before_findings[], after_findings[], resolved_findings[], new_findings[], kept_findings[], document_id?（每条 finding 另含 revision_status: rewritten|manual|pending 与 revision_note）",
     "/api/v1/tasks/{task_id}": "task_id, kind, state, result?, error?, created_at, updated_at",
     "/api/v1/sessions/purge": "status",
 }
@@ -60,12 +67,32 @@ def fields(spec: dict, schema: dict, limit: int = 8) -> str:
     return f"[{text}]" if schema.get("_is_array") else text
 
 
+def load_spec() -> tuple[dict, str]:
+    """取 OpenAPI 文档，返回 (spec, 来源说明)。
+
+    先读运行中的后端（能反映真实部署的路由与中间件）；不可用时退回进程内
+    `create_app().openapi()`——路由与 `response_model` 完全一致，只是少了实际网络形态。
+    这样在 CI 或本地未起服务时也能重新生成文档，不会留下过期文档。
+    """
+    try:
+        response = httpx.get(OPENAPI_URL, timeout=5)
+        response.raise_for_status()
+        return response.json(), f"运行中的后端 `{OPENAPI_URL}`"
+    except Exception as exc:  # noqa: BLE001 - 未起服务是常见情况，退回复退路径
+        if str(BACKEND) not in sys.path:
+            sys.path.insert(0, str(BACKEND))
+        from app.main import create_app
+
+        return create_app().openapi(), f"进程内 `create_app().openapi()`（未连上 {OPENAPI_URL}：{exc}）"
+
+
 def main() -> int:
-    spec = httpx.get("http://127.0.0.1:8000/openapi.json", timeout=10).json()
+    spec, source = load_spec()
     lines = [
         "# API 接口说明（与后端实现同步）",
         "",
-        "> 生成方式：`python backend/scripts/gen_api_doc.py`（从运行中的后端读取 `/openapi.json`，并附人工核对的响应字段）。",
+        "> 生成方式：`python backend/scripts/gen_api_doc.py`（读取 OpenAPI，并附人工核对的响应字段）。",
+        f"> 本次来源：{source}。",
         "> 修改接口后请重新生成；交互式文档见 `http://127.0.0.1:8000/docs`。",
         "",
         "## 1. 接口清单（OpenAPI 自动生成）",

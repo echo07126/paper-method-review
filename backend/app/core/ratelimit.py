@@ -9,10 +9,28 @@ from app.core.errors import AppError
 from app.storage.repository import Store
 
 _WINDOWS: dict[str, deque] = defaultdict(deque)
+# 桶键按「接口类别 + 会话/客户端」划分，会话一多键就无界增长。定期清掉已过期/已空的桶，
+# 避免长期驻留的服务把内存耗在再也不会被命中的限流桶上。
+_PRUNE_EVERY = 512
+_calls = 0
+
+
+def _prune(now: float, window_seconds: int) -> None:
+    stale = [
+        bucket
+        for bucket, queue in _WINDOWS.items()
+        if not queue or now - queue[-1] > window_seconds
+    ]
+    for bucket in stale:
+        del _WINDOWS[bucket]
 
 
 def _hit(bucket: str, limit: int, window_seconds: int = 60) -> bool:
+    global _calls
     now = time.monotonic()
+    _calls += 1
+    if _calls % _PRUNE_EVERY == 0:
+        _prune(now, window_seconds)
     queue = _WINDOWS[bucket]
     while queue and now - queue[0] > window_seconds:
         queue.popleft()

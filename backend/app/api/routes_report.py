@@ -6,7 +6,7 @@ from fastapi.responses import PlainTextResponse
 from app.api.deps import get_store, resolve_session
 from app.core.audit import audit
 from app.core.config import get_settings
-from app.engine.checklist import load_checklist
+from app.engine.checklist import MIN_EXPECTED_ITEMS, load_checklist
 from app.engine.llm_provider import build_provider
 from app.engine.revision import review_and_compare
 from app.models.schemas import DocumentIR, ReportSummary, ReviewReport, TaskAccepted
@@ -64,7 +64,9 @@ def revise_report(report_id: str, request: Request, response: Response) -> dict:
     def _run() -> dict:
         settings = get_settings()
         store = get_store()
-        items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
+        items = load_checklist(
+            Path(settings.checklist_dir) / "quant-ai-v1.json", MIN_EXPECTED_ITEMS
+        )
         provider = build_provider(settings)
         # 复用已取回的初稿报告，避免重跑一次完整审查。
         _, revised_report, revised_document, _ = review_and_compare(
@@ -80,7 +82,8 @@ def revise_report(report_id: str, request: Request, response: Response) -> dict:
         )
         store.save_report(session_id, revised_document_id, revised_report.report_id, revised_report.model_dump_json())
         audit("report_revised", source_report_id=report_id, revised_report_id=revised_report.report_id)
-        return revised_report.model_dump()
+        # 附带修改稿的 document_id：前端据此把原文栏切到修改稿正文，避免报告与正文错配。
+        return {**revised_report.model_dump(), "document_id": revised_document_id}
 
     job_id = submit("revision", session_id, {"report_id": report_id}, _run)
     return {"task_id": job_id, "state": "queued", "kind": "revision", "poll_url": f"/tasks/{job_id}"}

@@ -1,6 +1,7 @@
 # API 接口说明（与后端实现同步）
 
-> 生成方式：`python backend/scripts/gen_api_doc.py`（从运行中的后端读取 `/openapi.json`，并附人工核对的响应字段）。
+> 生成方式：`python backend/scripts/gen_api_doc.py`（读取 OpenAPI，并附人工核对的响应字段）。
+> 本次来源：进程内 `create_app().openapi()`（未连上 http://127.0.0.1:8000/openapi.json：[WinError 10061] 由于目标计算机积极拒绝，无法连接。）。
 > 修改接口后请重新生成；交互式文档见 `http://127.0.0.1:8000/docs`。
 
 ## 1. 接口清单（OpenAPI 自动生成）

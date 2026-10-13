@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_store, resolve_session
 from app.core.audit import audit
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.engine.chat_history import build_chat_messages
 from app.engine.llm_provider import LLMUnavailable, build_provider
 from app.engine.qa_context import build_question_context, build_qa_system_message
@@ -53,9 +54,18 @@ def _build_question(report: ReviewReport, finding_id: str | None, question: str,
       模型无法看到其它段落，回答必须限定在这一条问题上；
     - 自由提问（无 finding_id）：注入全文（含表格）+ DATA 区块，模型可检索任意段落，
       并在同一会话内沿用最近 10 轮对话记忆。
+
+    注意：`finding_id` 非空但查不到时**不得**回落到全文分支——此时调用方并未加载文档，
+    全文为空，会用一个空 DATA 区块回答一个本该限定在单条问题上的追问。
     """
-    finding = next((f for f in report.findings if f.finding_id == finding_id), None)
-    if finding is not None:
+    if finding_id is not None:
+        finding = next((f for f in report.findings if f.finding_id == finding_id), None)
+        if finding is None:
+            raise AppError(
+                "finding_not_found",
+                "该审查条目在当前报告中不存在（报告可能已重新生成），请刷新页面后重试。",
+                404,
+            )
         anchor = finding.anchors[0].paragraph_index if finding.anchors else None
         context = (
             f"问题标题：{finding.headline}\n"

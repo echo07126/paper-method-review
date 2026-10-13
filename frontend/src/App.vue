@@ -16,10 +16,6 @@ const historyRoute = { name: "history", label: "报告历史" };
 const active = computed(() => route.name);
 
 function go(name: string) {
-  if (name === "upload") {
-    router.push({ name: "upload" });
-    return;
-  }
   router.push({ name });
 }
 </script>

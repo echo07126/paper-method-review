@@ -8,6 +8,7 @@
 import re
 
 from app.core.ids import new_id
+from app.engine.figures import NOT_A_FIGURE_PREFIX, NOT_A_TABLE_PREFIX, NUMBER_IS_A_QUANTITY
 from app.models.schemas import Anchor, DocumentIR, Finding, Paragraph, Severity, Verdict
 
 ITEM_ID = "R-FIG-01"
@@ -17,13 +18,27 @@ CAPTION = re.compile(
     r"\s*(?P<number>\d+|[一二三四五六七八九十]+)(?P<rest>.*)$",
     re.IGNORECASE,
 )
+# 编号后紧跟量词/单位时，这里的数字是「数量」而不是图表编号：
+# 「本研究代表3个模型的集成结果」中的「表3」、「发表3篇论文」中的「表3」都不是表引用。
+# 前置字词同样排除（代表 / 试图 / 地图 / 发表 / 报表…），与 figures.FIGURE_REF_PATTERN 同一口径。
 REFERENCE = re.compile(
-    r"(?P<kind>Supplementary\s+(?:Fig(?:ure)?|Table)|附图|附表|Fig\.?|Figure|Table|图|表)"
-    r"\s*(?P<number>\d+|[一二三四五六七八九十]+)",
+    r"(?P<kind>Supplementary\s+(?:Fig(?:ure)?|Table)|附图|附表|Fig\.?|Figure|Table"
+    rf"|(?<![{NOT_A_FIGURE_PREFIX}])图|(?<![{NOT_A_TABLE_PREFIX}])表)"
+    r"\s*(?P<number>\d+|[一二三四五六七八九十]+)"
+    + NUMBER_IS_A_QUANTITY,
     re.IGNORECASE,
 )
 # 题注编号后必须紧跟分隔符或行尾，避免把「表2报告了…」这类正文句误判为题注
 CAPTION_SEPARATOR = re.compile(r"^\s*$|^[\s：:．.、,，\-—()（）\[\]]")
+# 中文句末标点：整句陈述（「图 1 显示了…对比。」）是正文而非题注。
+# 只排除中文句末标点，保留英文题注惯用的「Figure 1. Accuracy comparison.」写法。
+_SENTENCE_LIKE = re.compile(r"[。！？；]\s*$")
+# 无分隔符写法（「图1准确率对比」）的收窄条件：题注短、且不以正文谓语开头。
+# 否则「图1报告了准确率」这类正文句会被当成题注，进而掩盖真实题注并漏掉样本量冲突。
+_CAPTION_BODY_VERB = re.compile(
+    r"^\s*(报告了|显示了|示出|给出|表明|说明|可见|描述|列出|展示了|呈现|总结了|对比了|揭示|反映)"
+)
+_CAPTION_MAX_LEN_WITHOUT_SEPARATOR = 30
 # 题注/正文中的样本量声明：n=42 / 42 例 / 14 名
 SAMPLE_SIZE = re.compile(r"(?:[nN]\s*=\s*(\d[\d,]*)|(\d[\d,]*)\s*(例|名|个|张|幅|台|只|人))")
 # 这些量词视为同一量纲「计数」，使「n=42」与「42 例」可直接比数值
@@ -73,12 +88,26 @@ def _samples_in(text: str) -> dict[str, int]:
 
 
 def find_captions(document: DocumentIR) -> dict[tuple[str, int], int]:
-    """题注段落 → {编号: 段落 index}；编号后无分隔符的正文句不计入。"""
+    """题注段落 → {编号: 段落 index}。
+
+    计入条件（任一）：
+    - 编号后紧跟分隔符（「图1 名称」「表1：名称」「Table 1. Name」）；
+    - 整段较短且不以正文谓语开头（覆盖「图1准确率对比」这类无分隔符题注写法）。
+    以中文句末标点收尾的整句陈述一律排除，否则会遮蔽真实题注。
+    """
     captions: dict[tuple[str, int], int] = {}
     for paragraph in document.paragraphs:
         text = paragraph.text.strip()
         match = CAPTION.match(text)
-        if not match or not CAPTION_SEPARATOR.match(match.group("rest")):
+        if not match:
+            continue
+        rest = match.group("rest")
+        if not CAPTION_SEPARATOR.match(rest):
+            if len(text) > _CAPTION_MAX_LEN_WITHOUT_SEPARATOR or _CAPTION_BODY_VERB.match(rest):
+                continue
+        # 以中文句末标点收尾的是正文陈述句（「图 1 显示了…对比。」）。
+        # 若把它当成题注，会遮蔽真正的题注并使样本量核对失去比对对象。
+        if _SENTENCE_LIKE.search(rest):
             continue
         key = _key_of(match.group("kind"), match.group("number"))
         if key is not None:

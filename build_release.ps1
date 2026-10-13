@@ -34,7 +34,7 @@ function New-SourcePackage {
   New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
   # 顶层文件
-  foreach ($f in 'docker-compose.yml', 'README.md', '交付说明.md', 'requirements.txt', '.gitignore', 'start.ps1', 'start.sh') {
+  foreach ($f in 'docker-compose.yml', 'README.md', '交付说明.md', 'THIRD_PARTY_NOTICES.md', 'requirements.txt', '.gitignore', 'start.ps1', 'start.sh') {
     if (Test-Path $f) { Copy-Item $f $stage -Force }
   }
 
@@ -106,4 +106,4 @@ if ($Mode -eq 'image' -or $Mode -eq 'both') { New-ImagePackage }
 Write-Host ""
 Write-Host "产物："
 Get-ChildItem $outPath -File | ForEach-Object { Write-Host ("  - " + $_.Name) }
-Write-Host "离线镜像包用法：docker load -i <images tar>，再把 backend.env 放为 backend/.env，执行 docker compose up -d。"
+Write-Host "离线镜像包（裸 tar）仅含镜像；如需「解压即用」的单文件离线部署包，请再运行 无关代码/tools/build_image_bundle.ps1 生成 …-离线镜像包.zip。"

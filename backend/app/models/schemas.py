@@ -145,6 +145,10 @@ class Element(BaseModel):
     value: Any = None
     anchors: list[Anchor] = Field(default_factory=list)
     confidence: float = 1.0
+    # 该要素是否抽自表体。表体要素的锚点是「表格上方正文段」的段落序号，
+    # 与正文段自身的锚点完全相同；图表降级判定必须靠本字段区分二者，
+    # 否则表格上方段落里的证据会被误当成「表内证据已消费」而跳过降级。
+    in_table: bool = False
 
 
 class Finding(BaseModel):

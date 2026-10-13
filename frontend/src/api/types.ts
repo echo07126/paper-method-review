@@ -57,12 +57,15 @@ export interface ReviewReport {
   demote_on_figures: boolean;
   paper_type: string;
   quality?: ReportQuality;
+  /** 仅「生成修改稿」任务的结果会带：修改稿所属文档，供报告页加载对应正文 */
+  document_id?: string;
 }
 
 export interface UploadResponse {
   document_id: string;
   parser: string;
-  sections: Section[];
+  /** 上传接口返回的是摘要（无 id/level/confidence），不是完整 Section */
+  sections: SectionSummary[];
   paragraph_count: number;
   citation_count: number;
   reference_count: number;
@@ -147,6 +150,8 @@ export interface CompareResponse {
   resolved_findings: CompareFinding[];
   new_findings: CompareFinding[];
   kept_findings: CompareFinding[];
+  /** 现生成的修改稿所属文档；用 after_report_id 比既有报告时不返回 */
+  document_id?: string;
 }
 
 export interface ChatMessage {

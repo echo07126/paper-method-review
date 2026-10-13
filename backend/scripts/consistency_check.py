@@ -1,4 +1,9 @@
-"""多轮一致性测试：同一论文连续审查 3 轮，量化条目覆盖与判定稳定性。"""
+"""多轮一致性测试：同一论文连续审查 N 轮，量化条目覆盖与判定稳定性。
+
+⚠ 本脚本会**真实调用模型 API**（默认 3 轮完整审查，按量计费），因此不属于离线门禁，
+需要显式传 `--confirm-billing` 才会执行；CI 与「随手跑一套检查」时请跳过它。
+"""
+import argparse
 import sys
 from collections import Counter
 from pathlib import Path
@@ -19,7 +24,7 @@ TEXT = [
     "本文提出了一种改进的注意力机制模块，可推广至各类医疗影像场景。",
 ]
 
-ROUNDS = 3
+DEFAULT_ROUNDS = 3
 
 
 def build_document() -> DocumentIR:
@@ -42,6 +47,22 @@ def problem_set(report) -> set[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS, help=f"审查轮数（默认 {DEFAULT_ROUNDS}）")
+    parser.add_argument(
+        "--confirm-billing",
+        action="store_true",
+        help="确认本脚本会真实调用模型 API 并按量计费；不传则直接退出，避免误触发付费调用",
+    )
+    args = parser.parse_args()
+
+    if not args.confirm_billing:
+        print("SKIP: 本脚本会真实调用模型 API（按量计费），需显式传 --confirm-billing 才会执行。")
+        return 0
+    if args.rounds < 2:
+        print("FAIL: 一致性对比至少需要 2 轮（--rounds >= 2）。")
+        return 2
+
     settings = get_settings()
     provider = build_provider(settings)
     if provider is None:
@@ -49,25 +70,28 @@ def main() -> int:
         return 2
 
     items = load_checklist(ROOT / "checklists" / "quant-ai-v1.json")
-    reports = [review_document(build_document(), items, provider=provider, use_llm=True) for _ in range(ROUNDS)]
+    reports = [
+        review_document(build_document(), items, provider=provider, use_llm=True)
+        for _ in range(args.rounds)
+    ]
 
-    print("model:", settings.deepseek_model, " rounds:", ROUNDS)
+    print("model:", settings.deepseek_model, " rounds:", args.rounds)
     for index, report in enumerate(reports, start=1):
         print(f"  round{index}: problems={report.counts['total']} assessed={report.counts['assessed']} "
               f"llm_tokens_out={report.tokens.get('output', 0)} duration_ms={report.duration_ms}")
 
     maps = [verdict_map(report) for report in reports]
-    common_items = set(maps[0]) & set(maps[1]) & set(maps[2])
+    common_items = set.intersection(*(set(m) for m in maps)) if maps else set()
     stable = sum(1 for item in common_items if len({m[item] for m in maps}) == 1)
-    print(f"条目覆盖：每轮判定条目数 = {[len(m) for m in maps]}，三轮共有条目 = {len(common_items)}")
+    print(f"条目覆盖：每轮判定条目数 = {[len(m) for m in maps]}，{args.rounds} 轮共有条目 = {len(common_items)}")
     if common_items:
-        print(f"判定稳定率（三轮一致）= {stable}/{len(common_items)} = {stable / len(common_items):.0%}")
+        print(f"判定稳定率（{args.rounds} 轮一致）= {stable}/{len(common_items)} = {stable / len(common_items):.0%}")
 
     pset = [problem_set(report) for report in reports]
-    inter = pset[0] & pset[1] & pset[2]
-    union = pset[0] | pset[1] | pset[2]
-    print(f"问题集合：每轮 problem 条目数 = {[len(s) for s in pset]}，三轮交集 = {len(inter)}")
-    print(f"问题集合 Jaccard（三轮并集为分母）= {len(inter) / len(union) if union else 0:.0%}")
+    inter = set.intersection(*pset) if pset else set()
+    union = set.union(*pset) if pset else set()
+    print(f"问题集合：每轮 problem 条目数 = {[len(s) for s in pset]}，{args.rounds} 轮交集 = {len(inter)}")
+    print(f"问题集合 Jaccard（{args.rounds} 轮并集为分母）= {len(inter) / len(union) if union else 0:.0%}")
 
     for index, report in enumerate(reports, start=1):
         counter = Counter(f.severity.value for f in report.findings if f.verdict.value == "problem")

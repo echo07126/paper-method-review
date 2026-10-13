@@ -106,8 +106,14 @@ def verify_findings(document: DocumentIR, findings: list[Finding], provider: LLM
         return findings
 
     results = payload.get("results", []) if isinstance(payload, dict) else []
+    if not isinstance(results, list):
+        results = []
     quotes: dict[int, str | None] = {}
     for entry in results:
+        # 模型可能返回字符串/数组等非对象元素；`entry.get` 会抛 AttributeError 并逃出本函数的
+        # 「解析失败即降级」契约，把一个本该照常出报告的审查变成失败任务。
+        if not isinstance(entry, dict):
+            continue
         try:
             quotes[int(entry.get("index"))] = entry.get("quote")
         except (TypeError, ValueError):

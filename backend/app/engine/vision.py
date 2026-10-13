@@ -95,7 +95,13 @@ def read_figure_values(
     def _read_target(target: tuple[ImageRef, str]) -> tuple[dict | None, dict]:
         image, data_url = target
         label = image.caption or f"第 {image.index + 1} 张插图"
-        return _read_one(provider, data_url, image.caption, label)
+        try:
+            return _read_one(provider, data_url, image.caption, label)
+        except Exception as exc:  # noqa: BLE001
+            # 图像识读是附加能力，文档承诺「优雅降级、不影响主流程」；
+            # 并发路径下工作线程的任何异常都会让整次审查任务失败，故在此兜底。
+            safe_logger().warning("vision_read_failed label=%s error=%s", label, exc)
+            return None, {}
 
     # 各图识读彼此独立：并发提交、按提交顺序取回，保证 findings 顺序与串行执行完全一致。
     # 全局并发仍受 DeepSeekProvider 进程内共享的 LLM_MAX_CONCURRENCY 信号量约束。

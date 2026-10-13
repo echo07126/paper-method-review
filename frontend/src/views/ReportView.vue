@@ -53,44 +53,52 @@ const reviewRate = computed(() => {
 
 const loadError = ref("");
 const loading = ref(true);
+/** 请求序号：/report/A → /report/B 时旧请求可能后到，只允许最新一次的结果落地。 */
+let loadSeq = 0;
 
 async function loadReport() {
+  const seq = ++loadSeq;
   loadError.value = "";
   loading.value = true;
   report.value = null;
+  paragraphs.value = [];
+  tables.value = [];
   activeFinding.value = null;
   filter.value = "all";
   const reportId = (route.params.id as string) || store.reportId;
   if (reportId) {
     try {
       const { data } = await client.get<ReviewReport>(`/reports/${reportId}`);
+      if (seq !== loadSeq) return;
       report.value = data;
       store.setReport(reportId);
+      // 修改稿报告自带 document_id：优先据此加载正文，否则「生成修改稿 → 回到报告」
+      // 会把修改稿的结论配在未修改的原稿正文上。
+      const targetDocumentId = data.document_id || store.documentId;
+      if (targetDocumentId) {
+        store.setDocument(targetDocumentId);
+        try {
+          const { data: document } = await client.get<DocumentResponse>(`/documents/${targetDocumentId}`);
+          if (seq !== loadSeq) return;
+          paragraphs.value = document.paragraphs.filter((paragraph) => paragraph.text.trim());
+          tables.value = document.tables ?? [];
+        } catch {
+          // 原文不可见时仍可查看报告结论，不阻断主流程
+        }
+      }
       activeFinding.value = data.findings.find((item) => item.verdict === "problem") ?? null;
     } catch (err) {
+      if (seq !== loadSeq) return;
       loadError.value = `${(err as Error).message}（该报告可能已随会话过期被清除，可从「报告历史」选择其他报告）`;
     }
   }
-  if (store.documentId) {
-    try {
-      const { data } = await client.get<DocumentResponse>(`/documents/${store.documentId}`);
-      paragraphs.value = data.paragraphs.filter((paragraph) => paragraph.text.trim());
-      tables.value = data.tables ?? [];
-    } catch {
-      // 原文不可见时仍可查看报告结论，不阻断主流程
-    }
-  }
-  loading.value = false;
+  if (seq === loadSeq) loading.value = false;
 }
 
 onMounted(loadReport);
-// 组件在 /report/A → /report/B 之间复用时不会重新挂载，必须监听路由参数手动重载
-watch(
-  () => route.params.id,
-  (id) => {
-    if (id) loadReport();
-  }
-);
+// 组件在 /report/A → /report/B 之间复用时不会重新挂载，必须监听路由参数手动重载。
+// 无条件重载：导航到不带参数的 /report 时也应回落到当前会话报告，而不是继续显示上一份。
+watch(() => route.params.id, () => void loadReport());
 
 function selectFinding(finding: Finding) {
   activeFinding.value = finding;

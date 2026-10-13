@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 
@@ -7,6 +8,18 @@ REDACT_PATTERNS = [
 ]
 
 SENSITIVE_KEYS = {"text", "content", "prompt", "token", "api_key", "authorization"}
+
+
+def key_fingerprint(secret: str) -> str:
+    """密钥指纹：用于日志中标识「当前生效的是哪把 Key」，且不可反推出密钥。
+
+    此前日志直接记密钥尾 6 位——尾字符同样属于密钥材料，落盘即是一次泄漏面。
+    改为 sha256 前 8 位：同一把 Key 指纹恒定（可跨日志比对、可确认更换是否生效），
+    不同 Key 指纹不同，但日志里不再出现任何密钥字符。
+    """
+    if not secret:
+        return "-"
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:8]
 
 
 class RedactionFilter(logging.Filter):

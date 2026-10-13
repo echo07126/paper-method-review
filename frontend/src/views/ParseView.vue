@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import client from "@/api/client";
-import { submitAndPoll } from "@/api/tasks";
+import { submitAndPoll, type PollPromise } from "@/api/tasks";
 import type { DocumentResponse, ReviewCreateResponse } from "@/api/types";
 import { useSessionStore } from "@/stores/session";
 
@@ -11,8 +11,11 @@ const router = useRouter();
 const store = useSessionStore();
 const error = ref("");
 const loading = ref(false);
+const stage = ref("");
 const demoteOnFigures = ref(false);
 const useLlm = ref(true);
+/** 审查任务的轮询句柄：卸载时必须取消，否则回包会把已离开页面的用户拉回报告页。 */
+let pending: PollPromise<ReviewCreateResponse> | null = null;
 
 const paragraphs = ref<Array<{ index: number; text: string }>>([]);
 const tables = ref<DocumentResponse["tables"]>([]);
@@ -28,7 +31,12 @@ function sectionRange(index: number): string {
   const current = sections.value[index];
   const next = sections.value[index + 1];
   const start = current.paragraph_index + 1;
-  const end = next ? next.paragraph_index : paragraphs.value.length;
+  // `paragraphs` 已滤掉空段落，其长度小于末段序号；必须用最后一段的真实 index 作上界，
+  // 否则末节范围会被低估甚至出现 start > end 的「P111」式退化标签。
+  const lastIndex = paragraphs.value.length
+    ? paragraphs.value[paragraphs.value.length - 1].index
+    : current.paragraph_index;
+  const end = next ? next.paragraph_index : lastIndex + 1;
   return end > start ? `P${start}-${end}` : `P${start}`;
 }
 
@@ -47,6 +55,11 @@ onMounted(async () => {
   }
 });
 
+onUnmounted(() => {
+  pending?.cancel();
+  pending = null;
+});
+
 /** 点击大纲某节，右侧原文滚动到该节起始段落。 */
 function locateSection(index: number) {
   activeSectionIndex.value = index;
@@ -59,15 +72,30 @@ function locateSection(index: number) {
 async function runReview() {
   loading.value = true;
   error.value = "";
+  stage.value = "正在提交审查任务…";
   try {
     // 审查为后台任务：POST 立即返回 task_id，前端轮询 /tasks/{id} 取报告，期间不占用长连接。
-    const data = await submitAndPoll<ReviewCreateResponse>("/reviews", {
-      document_id: store.documentId,
-      use_llm: useLlm.value,
-      demote_on_figures: demoteOnFigures.value,
-    });
+    pending = submitAndPoll<ReviewCreateResponse>(
+      "/reviews",
+      {
+        document_id: store.documentId,
+        use_llm: useLlm.value,
+        demote_on_figures: demoteOnFigures.value,
+      },
+      {
+        // 把服务端真实阶段回显出来：模型审查可能等待数十秒，避免进度条看起来卡住
+        onState: (state) => {
+          if (state === "queued") stage.value = "任务已入队，等待执行…";
+          else if (state === "running") {
+            stage.value = useLlm.value ? "正在逐条审查（含模型判定）…" : "正在逐条审查（规则判定）…";
+          }
+        },
+      },
+    );
+    const data = await pending;
     const tokens = data.tokens ?? {};
     store.setTokens(
+      data.report_id,
       useLlm.value
         ? `模型顾问已启用：本次消耗 tokens 输入 ${tokens.input ?? 0} / 输出 ${tokens.output ?? 0}`
         : "本次已手动关闭模型顾问（仅规则判定），tokens 消耗为 0",
@@ -78,6 +106,8 @@ async function runReview() {
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
+    pending = null;
+    stage.value = "";
     loading.value = false;
   }
 }
@@ -101,13 +131,14 @@ async function runReview() {
     <p v-if="sourceName" class="tiny source">来源文件：{{ sourceName }}</p>
     <p v-if="store.warnings.length" class="warn">⚠ {{ store.warnings.join("；") }}</p>
     <p v-if="error" class="error">{{ error }}</p>
+    <p v-else-if="loading && stage" class="tiny stage">{{ stage }}</p>
 
     <div class="split">
       <div class="card outline">
         <div class="outline-head">章节大纲</div>
         <div
           v-for="(section, index) in sections"
-          :key="section.id"
+          :key="section.paragraph_index"
           class="outline-item"
           :class="{ active: activeSectionIndex === index }"
           @click="locateSection(index)"

@@ -16,9 +16,9 @@
 
 同名标准答案位于 `ground_truth/`，JSON 格式见 [`annotation-schema.md`](annotation-schema.md)。`ground_truth/blind-00*.json` 仅含 `sample_id`/类型/条目/锚点等**标注元数据**（不含论文正文），正常入库。
 
-> **关于 `real/raw/` 与盲测件（合规口径）**：`raw/` 保存用户提供的 4 篇**原始**论文，属非开放许可（`ground_truth/*.json` 中记为 `user-provided`），仅本地留档，已被 `.gitignore` 排除、**不进入仓库**。
+> **关于 `real/raw/` 与盲测件（合规口径）**：`raw/` 保存用户提供的 4 篇**原始**论文，仅本地留档，已被 `.gitignore` 排除、**不进入公开仓库**。此约束的**范围仅限 git**——目的是避免未发表论文随公开仓库分发，**不是「不能用于参赛材料」**；团队已确认这批论文可用于参赛材料（含界面截图与演示视频），依据见 `ground_truth/blind-004.json` 的 `license`（`team-authorized`）与 `note`。
 >
-> 由 `raw/` 复制而来的盲测件 `real/blind-001..004.docx` **同样不入库**（`.gitignore` 含 `samples/real/blind-*.docx` 与 `samples/real/*_media/`，插图亦为原论文派生物）。因此评测有两个口径：
+> 由 `raw/` 复制而来的盲测件 `real/blind-001..004.docx` **同样不进公开仓库**（`.gitignore` 含 `samples/real/blind-*.docx` 与 `samples/real/*_media/`，插图亦为原论文派生物）。因此评测有两个口径：
 >
 > - **本地全量口径 = 16 篇 / 82 条**：先在本地生成 4 个盲测件（见下方命令）后运行脚本，`review`/`empirical`/`planted` 分组才纳入评测。
 > - **仓库 tracked 子集口径 = 12 篇 / 68 条（CI 运行口径）**：盲测件缺失时 `eval_ac.py` / `ablation.py` **自动跳过**对应分组——实测 68/68 = 100% 检出、精确率 100%、定位 97%（fixtures 42 + real 26），`ablation.py --strict` 通过（要素 P/R/F1 86%/86%/86%）。

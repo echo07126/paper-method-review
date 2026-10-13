@@ -22,6 +22,11 @@ MANUAL_ITEM_IDS = {"R-05", "R-10", "R-11", "R-12", "R-13", "R-FIG-01"}
 # 结构性引用问题：修复对象是参考文献表而非正文句，不能套用句式模板改写
 STRUCTURAL_ITEM_IDS = {"R-REF-01", "R-REF-02"}
 
+# 清单外附加检查（数值自洽 R-DATA-*、图-文一致性 R-FIG-*）：结论指向原始数据/图表的不一致，
+# 必须回到数据侧修正。它们的 suggestion 是「核对…使其之和为 10」这类**自检提示**而非论文语句，
+# 若照此补写会把提示语当成正文写进修改稿，并谎报该条已自动改写。
+EXTERNAL_CHECK_PREFIXES = ("R-DATA-", "R-FIG-")
+
 # 写入位置偏好：优先放到语义匹配的章节，而非 finding 的原始锚点
 SECTION_PREFERENCE: dict[str, str] = {
     "R-01": r"(摘要|引言|背景|研究)",
@@ -84,18 +89,26 @@ def _section_paragraph_index(document: DocumentIR, pattern: str) -> int | None:
 
     注意：章节起始段常是标题本身，若直接把补写挂在标题上，句级要素抽取会因
     标题文本过短而漏判，因此这里显式跳过标题段。
+
+    扫描以「下一节标题」为硬上界：匹配到的节若没有自己的正文段（例如只有标题、紧接着
+    就是下一节），不得把补写写到后一节的正文里，此时返回 None 交由调用方回退到原锚点。
     """
     matcher = re.compile(pattern)
-    headings = {(section.paragraph_index, section.title) for section in document.sections}
     matches = [section for section in document.sections if matcher.search(section.title)]
     if not matches:
         return None
     section = min(matches, key=lambda item: item.paragraph_index)
+    following = [
+        other.paragraph_index
+        for other in document.sections
+        if other.paragraph_index > section.paragraph_index
+    ]
+    upper_bound = min(following) if following else None
     for paragraph in document.paragraphs:
-        if paragraph.index < section.paragraph_index:
+        if paragraph.index <= section.paragraph_index:
             continue
-        if (paragraph.index, paragraph.text) in headings:
-            continue
+        if upper_bound is not None and paragraph.index >= upper_bound:
+            break
         if paragraph.is_heading:
             continue
         return paragraph.index
@@ -222,6 +235,13 @@ def build_revised_document(
         if finding.verdict != Verdict.PROBLEM or finding.checklist_item_id in skip:
             continue
         item_id = finding.checklist_item_id
+        if item_id.startswith(EXTERNAL_CHECK_PREFIXES):
+            status[item_id] = (
+                "manual",
+                "该结论来自数值自洽 / 图-文一致性核对，须回到原始数据与图表修正，"
+                "不能由正文补写解决，代码不会代写。",
+            )
+            continue
         if item_id in MANUAL_ITEM_IDS or item_id in STRUCTURAL_ITEM_IDS:
             status[item_id] = (
                 "manual",

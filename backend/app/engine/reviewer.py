@@ -278,8 +278,15 @@ def _grade_of(confidence: float, certainty: Certainty) -> str:
     return "D"
 
 
-def _quality_card(findings: list[Finding], applicable_items: int) -> dict:
-    """质量卡：分级分布、门控分布、平均置信度与审查率（assessed/applicable）。"""
+def _quality_card(
+    findings: list[Finding], applicable_items: int, checklist_ids: set[str] | None = None
+) -> dict:
+    """质量卡：分级分布、门控分布、平均置信度与审查率（assessed/applicable）。
+
+    `checklist_ids` 限定时，审查率的分子只统计清单内条目：`R-DATA-*` / `R-FIG-01`
+    属清单外附加检查，若一并计入会把「已评估条目数」抬到 17 条之上，
+    使 `applicable_items` 虚高、审查率失真。
+    """
     grades = {"A": 0, "B": 0, "C": 0, "D": 0}
     gate_reasons: dict[str, int] = {}
     confidences: list[float] = []
@@ -290,7 +297,8 @@ def _quality_card(findings: list[Finding], applicable_items: int) -> dict:
         gate_reasons[reason] = gate_reasons.get(reason, 0) + 1
         if finding.certainty != Certainty.UNDETERMINED:
             confidences.append(finding.confidence)
-            assessed_items.add(finding.checklist_item_id)
+            if checklist_ids is None or finding.checklist_item_id in checklist_ids:
+                assessed_items.add(finding.checklist_item_id)
     assessed = len(assessed_items)
     applicable = max(applicable_items, assessed)
     return {
@@ -303,7 +311,9 @@ def _quality_card(findings: list[Finding], applicable_items: int) -> dict:
     }
 
 
-def _apply_gates(findings: list[Finding], applicable_items: int) -> tuple[list[Finding], dict]:
+def _apply_gates(
+    findings: list[Finding], applicable_items: int, checklist_ids: set[str] | None = None
+) -> tuple[list[Finding], dict]:
     """统一门控仲裁：读取各门控标记 → 定展示原因 → 量化置信度 → 分 A/B/C/D 档 → 汇总质量卡。"""
     scored: list[Finding] = []
     for finding in findings:
@@ -318,7 +328,7 @@ def _apply_gates(findings: list[Finding], applicable_items: int) -> tuple[list[F
                 }
             )
         )
-    return scored, _quality_card(scored, applicable_items)
+    return scored, _quality_card(scored, applicable_items, checklist_ids)
 
 
 def _mark_unassessed(findings: list[Finding], items: list[ReviewItem]) -> list[Finding]:
@@ -598,7 +608,9 @@ def review_document(
 
     # 统一门控仲裁 + 输出质量量化：在所有门控（证据门/判定档/图表降级/引用核验/图识读）落标之后，
     # 由唯一入口读取标记、定展示原因、算置信度、分 A/B/C/D 档并汇总质量卡。
-    findings, quality = _apply_gates(findings, len(items_for_review))
+    findings, quality = _apply_gates(
+        findings, len(items_for_review), {item.id for item in items_for_review}
+    )
 
     duration_ms = int((time.monotonic() - started) * 1000)
     report = ReviewReport(

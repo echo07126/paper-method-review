@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     chat_history_max_chars: int = 8000
     # 自由提问（全文问答）注入的全文预算（字符）。超出时按整段裁剪，与追问共用同一轮数/字符上限。
     qa_fulltext_max_chars: int = 12000
+    # 全文注入链路的统一提示词预算（审查 / 引用核验 / 补写共用）。
+    # 默认 0 表示使用 engine/prompts.MAX_PROMPT_CHARS；设为正数则全局覆盖，
+    # 便于按模型上下文窗口或 token 成本调整，而无需改代码。
+    prompt_max_chars: int = 0
+    # 定向送审（LLM_DIRECTED_REVIEW）提示词预算：0 = 不限制（默认，保留现有行为）。
+    # 该模式的规模上限约为「条目数 × 6 个片段 × 600 字」，长清单 + 长文档时 token 成本显著，
+    # 设为正数即按「条目块」从尾部裁剪（被裁条目会在报告中标记为未判定）。
+    directed_max_chars: int = 0
 
     max_upload_mb: int = 50
     max_pages: int = 60

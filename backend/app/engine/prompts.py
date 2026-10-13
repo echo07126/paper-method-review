@@ -2,15 +2,42 @@ from app.engine.retrieval import Chunk
 from app.models.schemas import ReviewItem
 
 # 全文注入链路的统一预算：全文模式审查、引用核验、补写共用同一上限，避免「截断不对称」。
-# 定向送审模式（LLM_DIRECTED_REVIEW）不注入全文，改为按条目携带检索片段，故不受此上限约束。
+# 默认值与 `Settings.prompt_max_chars` 一致；实际运行时以配置为准（可在 .env 覆盖）。
+# 定向送审模式（LLM_DIRECTED_REVIEW）不注入全文，改为按条目携带检索片段，
+# 因此不受此上限约束——其规模上限是「条目数 × (支撑片段 top_k + 反证片段 counter_k) × 600 字」，
+# 当前清单 17 条、top_k=4、counter_k=2 时最坏约 6 万字；需要压 token 成本时调小
+# `DIRECTED_MAX_CHARS` 即可按条目块裁剪。
 MAX_PROMPT_CHARS = 12000
 
 
-def limit_prompt_text(text: str, limit: int = MAX_PROMPT_CHARS) -> str:
+def max_prompt_chars() -> int:
+    """当前生效的全文预算（配置优先，未配置或读取失败时退回默认值）。"""
+    try:
+        from app.core.config import get_settings
+
+        configured = get_settings().prompt_max_chars
+    except Exception:  # noqa: BLE001 - 提示词构造不应因配置读取失败而中断
+        return MAX_PROMPT_CHARS
+    return configured if configured and configured > 0 else MAX_PROMPT_CHARS
+
+
+def directed_max_chars() -> int:
+    """定向送审的提示词预算；0 表示不限制（默认，保持既有行为）。"""
+    try:
+        from app.core.config import get_settings
+
+        configured = get_settings().directed_max_chars
+    except Exception:  # noqa: BLE001
+        return 0
+    return configured if configured and configured > 0 else 0
+
+
+def limit_prompt_text(text: str, limit: int | None = None) -> str:
     """超过预算时保留头部并显式标注截断，使各链路看到的正文范围一致。"""
-    if len(text) <= limit:
+    budget = max_prompt_chars() if limit is None else limit
+    if len(text) <= budget:
         return text
-    return text[:limit] + "\n[正文超出预算已截断，后续内容未参与本次判定]"
+    return text[:budget] + "\n[正文超出预算已截断，后续内容未参与本次判定]"
 
 
 SYSTEM_GUARD = (
@@ -76,15 +103,34 @@ def build_directed_review_prompt(
     context: dict[str, dict[str, list[Chunk]]],
     vision_facts: list[str] | None = None,
 ) -> list[dict]:
-    """按要素定向送审：每条清单条目只携带其相关原文片段与该条判定准则。"""
+    """按要素定向送审：每条清单条目只携带其相关原文片段与该条判定准则。
+
+    默认不设总量上限（见文件头说明）。当 `DIRECTED_MAX_CHARS` 配置为正数时，
+    按「条目块」为粒度从尾部裁剪，并把被裁条目显式告知模型返回 uncertain ——
+    以条目为粒度裁剪可避免把一个条目的片段截成半截，导致模型基于残缺证据下判。
+    """
+    budget = directed_max_chars()
     blocks: list[str] = []
+    used = 0
+    dropped: list[str] = []
     for item in items:
         entry = context.get(item.id, {})
-        blocks.append(_directed_item_block(item, entry.get("support", []), entry.get("counter", [])))
+        block = _directed_item_block(item, entry.get("support", []), entry.get("counter", []))
+        if budget and blocks and used + len(block) > budget:
+            dropped.append(item.id)
+            continue
+        blocks.append(block)
+        used += len(block) + 2
     vision_block = ""
     if vision_facts:
         vision_block = "\n\n图内数值线索（模型识读，存疑线索，需人工复核）：\n" + "\n".join(
             f"- {fact}" for fact in vision_facts
+        )
+    overflow_note = ""
+    if dropped:
+        overflow_note = (
+            f"\n\n注意：因提示词预算限制，以下条目未附带原文片段：{', '.join(dropped)}。"
+            "这些条目缺少证据，请对它们返回 verdict=uncertain。"
         )
     user_content = (
         DIRECTED_INSTRUCTION
@@ -93,6 +139,7 @@ def build_directed_review_prompt(
         + vision_block
         + "\n=== DATA 结束 ===\n\n"
         + OUTPUT_CONTRACT
+        + overflow_note
     )
     return [
         {"role": "system", "content": SYSTEM_GUARD},

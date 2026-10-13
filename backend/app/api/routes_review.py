@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.api.deps import get_store, resolve_session
 from app.core.audit import audit
 from app.core.config import get_settings
-from app.engine.checklist import load_checklist
+from app.engine.checklist import MIN_EXPECTED_ITEMS, load_checklist
 from app.engine.llm_provider import build_provider
 from app.engine.reviewer import review_document
 from app.models.schemas import DocumentIR, TaskAccepted
@@ -34,7 +34,9 @@ def create_review(payload: ReviewRequest, request: Request, response: Response) 
         # 配置与清单在任务体内读取，确保执行时用的是最新配置（而非提交瞬间的快照）。
         settings = get_settings()
         store = get_store()
-        items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
+        items = load_checklist(
+            Path(settings.checklist_dir) / "quant-ai-v1.json", MIN_EXPECTED_ITEMS
+        )
         use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
         provider = build_provider(settings) if use_llm else None
         report = review_document(

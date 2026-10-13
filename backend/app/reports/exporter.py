@@ -44,6 +44,7 @@ class MarkdownExporter:
                 lines.append("- 门控分布：" + "、".join(f"{key} {value}" for key, value in gate_reasons.items()))
                 lines.append("")
         assessed = [f for f in report.findings if f.certainty != Certainty.UNDETERMINED]
+        uncertain_count = sum(1 for finding in assessed if finding.verdict.value == "uncertain")
         for finding in assessed:
             anchor = finding.anchors[0] if finding.anchors else None
             location = f"段落 {anchor.paragraph_index}" if anchor else "位置未定"
@@ -59,11 +60,10 @@ class MarkdownExporter:
             if finding.suggestion:
                 lines.append(f"- 建议：{finding.suggestion}")
             lines.append("")
-        uncertain = [finding for finding in report.findings if finding.verdict.value == "uncertain"]
-        if uncertain:
-            lines.append("## 存疑（需人工复核）")
-            for finding in uncertain:
-                lines.append(f"- [{finding.checklist_item_id}] {finding.headline}：{finding.description}")
+        # 「存疑」不再单独罗列条目：结论已在上文逐条列出并带 certainty 标签，
+        # 重复一遍会让导出的报告出现整段重复内容；这里只给汇总数量。
+        if uncertain_count:
+            lines.append(f"> 其中存疑（需人工复核）{uncertain_count} 项，见上文带「疑似 / 未判定」标签的条目。")
             lines.append("")
         undetermined = [finding for finding in report.findings if finding.certainty == Certainty.UNDETERMINED]
         if undetermined:

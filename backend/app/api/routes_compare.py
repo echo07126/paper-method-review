@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.api.deps import get_store, resolve_session
 from app.core.audit import audit
 from app.core.config import get_settings
-from app.engine.checklist import load_checklist
+from app.engine.checklist import MIN_EXPECTED_ITEMS, load_checklist
 from app.engine.llm_provider import build_provider
 from app.engine.revision import review_and_compare
 from app.models.schemas import DocumentIR, ReviewReport, TaskAccepted, Verdict
@@ -22,7 +22,14 @@ class CompareRequest(BaseModel):
     use_llm: bool | None = None
 
 
-def _detail(finding) -> dict:
+def _detail(finding, revision_status: dict[str, tuple[str, str]] | None = None) -> dict:
+    """单条结论的对比视图。
+
+    修改稿侧的结论必须带上逐条 `revision_status` / `revision_note`：前端据此区分
+    「已自动改写」「需作者本人处理」「未自动改写」。此前该状态只被拼进 notes 散文，
+    前端读不到字段，于是每条都退化成灰底「未自动改写」、且「仍有 N 项需人工处理」永不显示。
+    """
+    status, note = (revision_status or {}).get(finding.checklist_item_id, ("pending", ""))
     return {
         "checklist_item_id": finding.checklist_item_id,
         "headline": finding.headline,
@@ -32,6 +39,8 @@ def _detail(finding) -> dict:
         "anchors": [a.model_dump() for a in finding.anchors],
         "description": finding.description,
         "suggestion": finding.suggestion,
+        "revision_status": status,
+        "revision_note": note,
     }
 
 
@@ -56,24 +65,34 @@ def _problems(report: ReviewReport) -> dict[str, object]:
     return {f.checklist_item_id: f for f in report.findings if f.verdict == Verdict.PROBLEM}
 
 
-def _build_response(before: ReviewReport, after: ReviewReport) -> dict:
+def _build_response(
+    before: ReviewReport,
+    after: ReviewReport,
+    revision_status: dict[str, tuple[str, str]] | None = None,
+    document_id: str | None = None,
+) -> dict:
     before_problems = _problems(before)
     after_problems = _problems(after)
     resolved_ids = sorted(set(before_problems) - set(after_problems))
     new_ids = sorted(set(after_problems) - set(before_problems))
     kept_ids = sorted(set(before_problems) & set(after_problems))
-    return {
+    payload = {
         "before": before.counts,
         "after": after.counts,
         "resolved": resolved_ids,
         "new": new_ids,
         "kept": kept_ids,
         "before_findings": [_detail(f) for f in before.findings if f.verdict == Verdict.PROBLEM],
-        "after_findings": [_detail(f) for f in after.findings if f.verdict == Verdict.PROBLEM],
-        "resolved_findings": [_detail(before_problems[i]) for i in resolved_ids],
-        "new_findings": [_detail(after_problems[i]) for i in new_ids],
-        "kept_findings": [_detail(after_problems[i]) for i in kept_ids],
+        "after_findings": [_detail(f, revision_status) for f in after.findings if f.verdict == Verdict.PROBLEM],
+        "resolved_findings": [_detail(before_problems[i], revision_status) for i in resolved_ids],
+        "new_findings": [_detail(after_problems[i], revision_status) for i in new_ids],
+        "kept_findings": [_detail(after_problems[i], revision_status) for i in kept_ids],
     }
+    # 修改稿的 document_id：前端据此把「修改后」原文栏切到修改稿，
+    # 否则「回到报告」会把修改稿报告与未修改的原稿正文并排显示。
+    if document_id:
+        payload["document_id"] = document_id
+    return payload
 
 
 @router.post("/compare", response_model=TaskAccepted, status_code=202)
@@ -102,7 +121,9 @@ def compare(payload: CompareRequest, request: Request, response: Response) -> di
             return _build_response(before, after)
 
         assert document is not None  # 由提交前的校验保证
-        items = load_checklist(Path(settings.checklist_dir) / "quant-ai-v1.json")
+        items = load_checklist(
+            Path(settings.checklist_dir) / "quant-ai-v1.json", MIN_EXPECTED_ITEMS
+        )
         provider = build_provider(settings)
         use_llm = settings.llm_default_enabled if payload.use_llm is None else payload.use_llm
         # 复用已取回的初稿报告，避免把同一篇初稿再审查一遍（省一次完整模型审查）。
@@ -123,7 +144,7 @@ def compare(payload: CompareRequest, request: Request, response: Response) -> di
         )
         store.save_report(session_id, revised_document_id, revised_report.report_id, revised_report.model_dump_json())
         audit("compare_autorevised", source_report_id=payload.before_report_id, revised_report_id=revised_report.report_id)
-        return _build_response(before, revised_report)
+        return _build_response(before, revised_report, revision_status, revised_document_id)
 
     job_id = submit(
         "compare",

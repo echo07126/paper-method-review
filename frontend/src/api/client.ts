@@ -1,5 +1,7 @@
 import axios from "axios";
 
+import { detailMessage } from "@/api/errorMessage";
+
 /** 接口前缀：导出等需要浏览器直接跳转的链接据此拼接，避免各处硬编码 /api/v1。 */
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 
@@ -28,7 +30,10 @@ client.interceptors.response.use(
         "无法连接后端服务：请确认后端已在 127.0.0.1:8000 运行（或容器已启动），并检查浏览器代理/防火墙未拦截 /api 请求。";
     } else {
       code = payload.code ?? "http_error";
-      message = payload.message ?? `服务异常（HTTP ${status}），请稍后重试。`;
+      message =
+        payload.message ??
+        detailMessage(payload.detail) ??
+        `服务异常（HTTP ${status}），请稍后重试。`;
     }
     const wrapped = new Error(message);
     Object.assign(wrapped, { code, requestId: payload.request_id, status });

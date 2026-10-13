@@ -50,19 +50,29 @@ def shutdown_executor(wait: bool = False) -> None:
             _executor = None
 
 
-def _run_job(store: Store, job_id: str, fn: Callable[[], Any]) -> None:
-    store.mark_job_running(job_id)
+def _finalize(store: Store, job_id: str, state: str, body: dict) -> None:
+    """写终态。写失败不得再抛：否则异常会逃出工作线程，任务永远停在 running。"""
     try:
+        store.finish_job(job_id, state, body)
+    except Exception:  # noqa: BLE001
+        safe_logger().exception("task_finalize_failed job_id=%s state=%s", job_id, state)
+
+
+def _run_job(store: Store, job_id: str, fn: Callable[[], Any]) -> None:
+    # `mark_job_running` 也放进 try：该语句本身失败时同样要落到终态，
+    # 否则任务会停在 queued，只能等 TASK_RETENTION_MINUTES 的僵尸清理兜底。
+    try:
+        store.mark_job_running(job_id)
         result = fn()
     except AppError as exc:
-        store.finish_job(job_id, FAILED, {"error": {"code": exc.code, "message": exc.message}})
+        _finalize(store, job_id, FAILED, {"error": {"code": exc.code, "message": exc.message}})
     except Exception:  # noqa: BLE001 - 任何异常都不得让工作线程崩溃
         safe_logger().exception("task_failed job_id=%s", job_id)
-        store.finish_job(
-            job_id, FAILED, {"error": {"code": "internal_error", "message": "任务执行失败，请稍后重试。"}}
+        _finalize(
+            store, job_id, FAILED, {"error": {"code": "internal_error", "message": "任务执行失败，请稍后重试。"}}
         )
     else:
-        store.finish_job(job_id, SUCCEEDED, {"result": result})
+        _finalize(store, job_id, SUCCEEDED, {"result": result})
 
 
 def submit(kind: str, session_id: str, params: dict, fn: Callable[[], Any]) -> str:
