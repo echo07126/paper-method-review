@@ -61,3 +61,7 @@ submit/
 无关代码/
 # 大文件（GitHub 单文件上限 100 MB）
 *.mp4
+
+# 用户论文的衍生物（盲测分析报告与标注元数据）：与原件同理，不随公开仓库分发
+docs/evaluation/blind-tests/
+samples/ground_truth/blind-*.json
